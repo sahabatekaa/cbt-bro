@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ref, onValue, update, push } from 'firebase/database';
 import { db } from '../firebase';
-import { AlertTriangle, Clock, ChevronLeft, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
+import { AlertTriangle, Clock, ChevronLeft, ChevronRight, CheckCircle, XCircle, BookOpen } from 'lucide-react';
 
 export default function ExamRoom({ studentData, onFinish }) {
   const [questions, setQuestions] = useState([]);
@@ -29,20 +29,23 @@ export default function ExamRoom({ studentData, onFinish }) {
       }
   }, [answers, studentData]);
 
-  // PERBAIKAN: Tarik soal yang Mapel-nya COCOK dengan sesi siswa
+  // PERBAIKAN: Filter Ganda (MAPEL dan TINGKAT)
   useEffect(() => {
     const unsubscribe = onValue(ref(db, 'bank_soal'), (snapshot) => {
       if (snapshot.exists()) {
           const allQuestions = Object.keys(snapshot.val()).map(key => ({ id: key, ...snapshot.val()[key] }));
-          // Filter cerdas: Hanya ambil soal untuk Mapel ini
+          
+          // Filter: Mapel sama DAN Tingkat kelas sama (huruf besar/kecil diabaikan)
           const filteredQuestions = allQuestions.filter(q => 
-              q.mapel && q.mapel.toLowerCase() === studentData.mapel.toLowerCase()
+              q.mapel && q.tingkat &&
+              q.mapel.toLowerCase() === studentData.mapel?.toLowerCase() &&
+              String(q.tingkat).toLowerCase() === String(studentData.tingkat).toLowerCase()
           );
           setQuestions(filteredQuestions);
       }
     });
     return () => unsubscribe();
-  }, [studentData.mapel]);
+  }, [studentData.mapel, studentData.tingkat]);
 
   useEffect(() => {
     if (timeLeft <= 0) { handleFinishExam(); return; }
@@ -59,7 +62,7 @@ export default function ExamRoom({ studentData, onFinish }) {
         const data = snapshot.val();
         if (data.status === 'force_finish' && !isFinishingRef.current) {
           isFinishingRef.current = true;
-          alert("PERHATIAN: Waktu habis atau ujian Anda telah dihentikan paksa oleh Pengawas.");
+          alert("PERHATIAN: Waktu habis atau ujian Anda dihentikan paksa oleh Pengawas.");
           
           let correct = 0;
           questionsRef.current.forEach(q => { if (answersRef.current[q.id] === q.kunci) correct++; });
@@ -150,12 +153,11 @@ export default function ExamRoom({ studentData, onFinish }) {
     );
   }
 
-  // Jika mapel tidak ada soalnya di database
   if (questions.length === 0) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-emerald-50 dark:bg-emerald-950 p-4 text-center">
         <BookOpen className="w-16 h-16 text-emerald-500 mb-4 animate-bounce" />
         <h2 className="font-bold text-xl md:text-2xl text-emerald-700 dark:text-emerald-400 mb-2">Soal Belum Tersedia</h2>
-        <p className="text-emerald-600 dark:text-emerald-500">Guru belum mengunggah soal untuk mata pelajaran: <b>{studentData.mapel}</b></p>
+        <p className="text-emerald-600 dark:text-emerald-500 text-sm md:text-base">Guru belum mengunggah soal untuk <b>{studentData.mapel} (Tingkat {studentData.tingkat})</b></p>
     </div>
   );
 
@@ -163,11 +165,10 @@ export default function ExamRoom({ studentData, onFinish }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-950 dark:to-emerald-900 text-gray-900 dark:text-gray-100 p-2 md:p-6 select-none relative pb-24">
-      {/* Header Siswa */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/70 dark:bg-gray-800/70 backdrop-blur-md p-4 rounded-xl md:rounded-2xl shadow-sm border border-white/50 dark:border-gray-700 mb-4 border-l-4 md:border-l-8 border-l-emerald-500 gap-3">
         <div>
           <h2 className="text-base md:text-2xl font-black text-emerald-800 dark:text-emerald-300 truncate w-full">{studentData.studentName}</h2>
-          <p className="text-xs md:text-sm font-bold text-emerald-600/80 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40 px-2 md:px-3 py-1 rounded-full inline-block mt-1">Kelas: {studentData.studentClass} | {studentData.mapel}</p>
+          <p className="text-xs md:text-sm font-bold text-emerald-600/80 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40 px-2 md:px-3 py-1 rounded-full inline-block mt-1">Kelas: {studentData.studentClass} | {studentData.mapel} (Tk.{studentData.tingkat})</p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
           <div className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-red-600 font-bold bg-red-100/80 dark:bg-red-900/50 backdrop-blur-sm px-2 md:px-3 py-1.5 md:py-2 rounded-lg md:rounded-xl border border-red-200 dark:border-red-800 shadow-sm text-xs md:text-base">
@@ -180,7 +181,6 @@ export default function ExamRoom({ studentData, onFinish }) {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-4">
-        {/* Kontainer Soal Utama */}
         <div className="flex-1 bg-white/70 dark:bg-gray-800/70 backdrop-blur-md p-4 md:p-8 rounded-xl md:rounded-3xl shadow-sm border border-white/50 dark:border-gray-700 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 md:w-64 md:h-64 bg-emerald-400/10 rounded-full blur-[60px] md:blur-[80px]"></div>
           
@@ -207,7 +207,6 @@ export default function ExamRoom({ studentData, onFinish }) {
               ))}
             </div>
 
-            {/* Navigasi Sebelumnya / Ragu / Selanjutnya */}
             <div className="flex justify-between mt-6 md:mt-12 pt-4 md:pt-6 border-t border-emerald-100 dark:border-gray-700 gap-2">
               <button onClick={() => setCurrentIndex(prev => Math.max(0, prev - 1))} disabled={currentIndex === 0} className="flex-1 flex items-center justify-center gap-1 md:gap-2 px-2 py-2 md:py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg md:rounded-xl disabled:opacity-40 font-bold hover:bg-gray-50 transition shadow-sm text-xs md:text-base">
                 <ChevronLeft size={16}/> Prev
@@ -222,7 +221,6 @@ export default function ExamRoom({ studentData, onFinish }) {
           </div>
         </div>
 
-        {/* Sidebar Navigasi Grid Angka */}
         <div className="w-full lg:w-72 bg-white/70 dark:bg-gray-800/70 backdrop-blur-md p-4 md:p-6 rounded-xl md:rounded-3xl shadow-sm border border-white/50 dark:border-gray-700 h-fit z-10">
           <h3 className="font-black text-xs md:text-lg mb-3 md:mb-4 text-center text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 py-1.5 md:py-2 rounded-lg md:rounded-xl border border-emerald-100 dark:border-emerald-800/50">Navigasi</h3>
           <div className="grid grid-cols-5 sm:grid-cols-8 lg:grid-cols-4 gap-1.5 md:gap-2">
