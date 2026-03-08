@@ -6,7 +6,13 @@ import { AlertTriangle, Clock, ChevronLeft, ChevronRight, CheckCircle, XCircle }
 export default function ExamRoom({ studentData, onFinish }) {
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
+  
+  // PERBAIKAN: Menyimpan jawaban siswa ke LocalStorage (Anti-Amnesia)
+  const [answers, setAnswers] = useState(() => {
+      const savedAnswers = localStorage.getItem(`answers_${studentData?.studentId}`);
+      return savedAnswers ? JSON.parse(savedAnswers) : {};
+  });
+  
   const [doubtful, setDoubtful] = useState({});
   const [warnings, setWarnings] = useState(studentData?.warnings || 0);
   const [isLocked, setIsLocked] = useState(false);
@@ -15,6 +21,20 @@ export default function ExamRoom({ studentData, onFinish }) {
   const [showFinishModal, setShowFinishModal] = useState(false);
   const isFinishingRef = useRef(false);
 
+  // Reference tambahan untuk memastikan nilai selalu ter-update saat Guru memutus paksa ujian
+  const answersRef = useRef(answers);
+  const questionsRef = useRef(questions);
+  useEffect(() => { answersRef.current = answers; }, [answers]);
+  useEffect(() => { questionsRef.current = questions; }, [questions]);
+
+  // Simpan jawaban otomatis ke memori browser setiap kali siswa klik
+  useEffect(() => {
+      if(studentData?.studentId) {
+          localStorage.setItem(`answers_${studentData.studentId}`, JSON.stringify(answers));
+      }
+  }, [answers, studentData]);
+
+  // Tarik Soal
   useEffect(() => {
     const unsubscribe = onValue(ref(db, 'bank_soal'), (snapshot) => {
       if (snapshot.exists()) setQuestions(Object.keys(snapshot.val()).map(key => ({ id: key, ...snapshot.val()[key] })));
@@ -22,12 +42,58 @@ export default function ExamRoom({ studentData, onFinish }) {
     return () => unsubscribe();
   }, []);
 
+  // Timer
   useEffect(() => {
     if (timeLeft <= 0) { handleFinishExam(); return; }
     const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
     return () => clearInterval(timer);
   }, [timeLeft]);
 
+  // PERBAIKAN: Sistem pendengar Cerdas untuk Paksa Selesai & Blokir Refresh
+  useEffect(() => {
+    if (!studentData?.studentId) return;
+    const studentRef = ref(db, `live_students/${studentData.studentId}`);
+    
+    const unsubscribe = onValue(studentRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        
+        // Skenario 1: Guru menekan "Paksa Selesai" saat siswa sedang aktif
+        if (data.status === 'force_finish' && !isFinishingRef.current) {
+          isFinishingRef.current = true;
+          alert("PERHATIAN: Waktu habis atau ujian Anda telah dihentikan paksa oleh Pengawas.");
+          
+          // Kalkulasi skor seketika menggunakan data dari Ref agar akurat
+          let correct = 0;
+          questionsRef.current.forEach(q => { if (answersRef.current[q.id] === q.kunci) correct++; });
+          const score = questionsRef.current.length > 0 ? Math.round((correct / questionsRef.current.length) * 100) : 0;
+
+          // Konfirmasi ke database bahwa paksa selesai sukses dieksekusi
+          update(ref(db, `live_students/${studentData.studentId}`), { status: 'selesai', progress: 100 });
+          push(ref(db, 'leaderboard'), {
+            name: studentData.studentName,
+            class: studentData.studentClass,
+            mapel: studentData.mapel || 'Umum',
+            score: score,
+            timestamp: Date.now()
+          });
+
+          if (document.fullscreenElement) document.exitFullscreen().catch(e => console.log(e));
+          onFinish(score);
+          
+        // Skenario 2: Siswa mencoba Me-Refresh/masuk ulang ke halaman ujian yang SUDAH SELESAI
+        } else if (data.status === 'selesai' && !isFinishingRef.current) {
+           isFinishingRef.current = true;
+           if (document.fullscreenElement) document.exitFullscreen().catch(e => console.log(e));
+           // Lempar langsung ke halaman nilai (skor diisi 0 karena riwayat asli ada di dashboard guru)
+           onFinish(0); 
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [studentData, onFinish]);
+
+  // Sensor Anti-Cheat Lokal (Tab & Fullscreen)
   useEffect(() => {
     const triggerWarning = (type) => {
       if (!isLocked && !isFinishingRef.current) {
@@ -89,6 +155,8 @@ export default function ExamRoom({ studentData, onFinish }) {
 
     setTimeout(async () => {
         if (document.fullscreenElement) await document.exitFullscreen().catch(err => console.log(err));
+        // Bersihkan memori soal dari HP anak setelah selesai
+        localStorage.removeItem(`answers_${studentData.studentId}`);
         onFinish(score);
     }, 100);
   };
@@ -151,7 +219,6 @@ export default function ExamRoom({ studentData, onFinish }) {
               ))}
             </div>
 
-            {/* PERBAIKAN TOMBOL NAVIGASI DI HP (GRID 3 KOLOM) */}
             <div className="grid grid-cols-3 gap-2 mt-6 md:mt-12 pt-5 md:pt-6 border-t border-emerald-100 dark:border-gray-700">
               <button onClick={() => setCurrentIndex(prev => Math.max(0, prev - 1))} disabled={currentIndex === 0} className="flex items-center justify-center gap-1 md:gap-2 px-2 md:px-6 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl disabled:opacity-40 font-bold hover:bg-gray-50 transition shadow-sm text-xs md:text-base">
                 <ChevronLeft size={16} className="md:w-5 md:h-5"/> <span className="hidden sm:inline">Sebelumnya</span><span className="sm:hidden">Prev</span>
