@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ref, onValue, push, update, remove, get } from 'firebase/database';
 import { db, auth } from '../firebase';
-import { Users, BookOpen, Award, Settings, LogOut, Plus, Trash2, Printer, CheckCircle, Download, Upload, Menu, X, User } from 'lucide-react';
+import { Users, BookOpen, Award, Settings, LogOut, Plus, Trash2, Printer, CheckCircle, Download, Upload, Menu, X, User, Filter } from 'lucide-react';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
 import * as XLSX from 'xlsx';
 
@@ -13,28 +13,27 @@ export default function TeacherDashboard({ onLogout }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({ pertanyaan: '', opsiA: '', opsiB: '', opsiC: '', opsiD: '', kunci: 'A' });
+  
+  // State untuk form & filter
+  const [formData, setFormData] = useState({ mapel: '', pertanyaan: '', opsiA: '', opsiB: '', opsiC: '', opsiD: '', kunci: 'A' });
   const [editId, setEditId] = useState(null);
   const [sessionForm, setSessionForm] = useState({ mapel: '', kelas: '' });
-  const fileInputRef = useRef(null);
+  
+  // Filter Rekap & Bank Soal
+  const [filterBankMapel, setFilterBankMapel] = useState('');
+  const [filterRekapMapel, setFilterRekapMapel] = useState('');
+  const [filterRekapKelas, setFilterRekapKelas] = useState('');
 
-  // State untuk menyimpan data profil pengawas
+  const fileInputRef = useRef(null);
   const [teacherProfile, setTeacherProfile] = useState({ nama: 'Memuat...', email: '' });
 
   useEffect(() => {
-    // Ambil data profil pengawas yang sedang login
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
         const userRef = ref(db, `users/${user.uid}`);
         const snapshot = await get(userRef);
-        if (snapshot.exists()) {
-          setTeacherProfile({
-            nama: snapshot.val().nama || 'Pengawas',
-            email: user.email
-          });
-        } else {
-            setTeacherProfile({ nama: 'Pengawas', email: user.email });
-        }
+        if (snapshot.exists()) setTeacherProfile({ nama: snapshot.val().nama || 'Pengawas', email: user.email });
+        else setTeacherProfile({ nama: 'Pengawas', email: user.email });
       }
     });
 
@@ -43,7 +42,7 @@ export default function TeacherDashboard({ onLogout }) {
     onValue(ref(db, 'leaderboard'), (snap) => setLeaderboard(snap.val() ? Object.keys(snap.val()).map(key => ({ id: key, ...snap.val()[key] })).sort((a, b) => b.score - a.score) : []));
     onValue(ref(db, 'active_sessions'), (snap) => setSessions(snap.val() ? Object.keys(snap.val()).map(key => ({ id: key, ...snap.val()[key] })).reverse() : []));
 
-    return () => unsubscribeAuth(); // Cleanup listener saat komponen unmount
+    return () => unsubscribeAuth();
   }, []);
 
   const handleLogout = async () => { await signOut(auth); onLogout(); };
@@ -53,13 +52,14 @@ export default function TeacherDashboard({ onLogout }) {
     e.preventDefault();
     if (editId) update(ref(db, `bank_soal/${editId}`), formData);
     else push(ref(db, 'bank_soal'), formData);
-    setShowModal(false); setFormData({ pertanyaan: '', opsiA: '', opsiB: '', opsiC: '', opsiD: '', kunci: 'A' }); setEditId(null);
+    setShowModal(false); setFormData({ mapel: '', pertanyaan: '', opsiA: '', opsiB: '', opsiC: '', opsiD: '', kunci: 'A' }); setEditId(null);
   };
   const handleDeleteSoal = (id) => { if(window.confirm('Hapus soal ini?')) remove(ref(db, `bank_soal/${id}`)); };
 
+  // PERBAIKAN: Template Excel wajib isi Mapel
   const handleDownloadExcel = () => {
-    const ws = XLSX.utils.json_to_sheet([{ Pertanyaan: "Contoh Soal", OpsiA: "A", OpsiB: "B", OpsiC: "C", OpsiD: "D", Kunci: "A" }]);
-    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Soal"); XLSX.writeFile(wb, "Template.xlsx");
+    const ws = XLSX.utils.json_to_sheet([{ Mapel: "Matematika", Pertanyaan: "Contoh Soal", OpsiA: "A", OpsiB: "B", OpsiC: "C", OpsiD: "D", Kunci: "A" }]);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Soal"); XLSX.writeFile(wb, "Template_Multi_Ujian.xlsx");
   };
 
   const handleUploadExcel = (e) => {
@@ -69,9 +69,15 @@ export default function TeacherDashboard({ onLogout }) {
       try {
         const data = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
         let count = 0;
-        data.forEach(row => { if (row.Pertanyaan && row.OpsiA && row.Kunci) { push(ref(db, 'bank_soal'), { pertanyaan: row.Pertanyaan, opsiA: row.OpsiA, opsiB: row.OpsiB, opsiC: row.OpsiC, opsiD: row.OpsiD, kunci: row.Kunci }); count++; } });
-        alert(`Berhasil unggah ${count} soal!`);
-      } catch (error) { alert("Format Error"); }
+        data.forEach(row => { 
+            // Wajib ada baris Mapel di Excel
+            if (row.Mapel && row.Pertanyaan && row.OpsiA && row.Kunci) { 
+                push(ref(db, 'bank_soal'), { mapel: row.Mapel, pertanyaan: row.Pertanyaan, opsiA: row.OpsiA, opsiB: row.OpsiB, opsiC: row.OpsiC, opsiD: row.OpsiD, kunci: row.Kunci }); 
+                count++; 
+            } 
+        });
+        alert(`Berhasil unggah ${count} soal dari Excel!`);
+      } catch (error) { alert("Format Error. Pastikan ada kolom 'Mapel'."); }
     };
     reader.readAsBinaryString(file); e.target.value = null; 
   };
@@ -85,6 +91,11 @@ export default function TeacherDashboard({ onLogout }) {
   const deleteSession = (id) => { if(window.confirm('Hapus sesi?')) remove(ref(db, `active_sessions/${id}`)); };
 
   const activeTokensList = sessions.filter(s => s.status === 'active').map(s => s.token).join(', ') || 'TIDAK ADA';
+
+  // Opsi Unik untuk Dropdown Filter
+  const uniqueBankMapels = [...new Set(bankSoal.map(s => s.mapel))].filter(Boolean);
+  const uniqueRekapMapels = [...new Set(leaderboard.map(s => s.mapel))].filter(Boolean);
+  const uniqueRekapKelas = [...new Set(leaderboard.map(s => s.class))].filter(Boolean);
 
   return (
     <div className="flex h-screen overflow-hidden bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-950 dark:to-emerald-900 text-gray-900 dark:text-gray-100 font-sans relative">
@@ -103,7 +114,6 @@ export default function TeacherDashboard({ onLogout }) {
           <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-1.5 text-gray-500 absolute top-3 right-3 bg-gray-100 dark:bg-gray-800 rounded-full"><X size={18} /></button>
         </div>
         
-        {/* INFO PROFIL PENGAWAS */}
         <div className="p-4 border-b border-emerald-100 dark:border-gray-800 bg-emerald-50/50 dark:bg-gray-800/30">
           <div className="flex items-center gap-3">
             <div className="bg-emerald-100 dark:bg-emerald-900/50 p-2 rounded-full text-emerald-600 dark:text-emerald-400">
@@ -156,13 +166,13 @@ export default function TeacherDashboard({ onLogout }) {
                <div className="bg-white/70 dark:bg-gray-800/70 rounded-xl shadow-sm overflow-x-auto border border-white/50 dark:border-gray-700 w-full">
                  <table className="w-full text-left min-w-[500px]">
                    <thead className="bg-emerald-50/50 dark:bg-gray-700/50 text-sm">
-                     <tr><th className="p-3 font-bold">Nama Siswa</th><th className="p-3 font-bold">Kelas</th><th className="p-3 font-bold">Progress</th><th className="p-3 font-bold">Status</th><th className="p-3 font-bold text-center">Aksi</th></tr>
+                     <tr><th className="p-3 font-bold">Nama Siswa</th><th className="p-3 font-bold">Mapel / Kelas</th><th className="p-3 font-bold">Progress</th><th className="p-3 font-bold">Status</th><th className="p-3 font-bold text-center">Aksi</th></tr>
                    </thead>
                    <tbody className="divide-y dark:divide-gray-700 text-sm">
                      {liveStudents.map(student => (
                        <tr key={student.id}>
                          <td className="p-3 font-medium">{student.name}</td>
-                         <td className="p-3">{student.class}</td>
+                         <td className="p-3"><span className="font-bold">{student.mapel}</span><br/><span className="text-xs text-gray-500">{student.class}</span></td>
                          <td className="p-3"><div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-emerald-600 h-2 rounded-full" style={{ width: `${student.progress || 0}%` }}></div></div></td>
                          <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs font-bold whitespace-nowrap ${student.status === 'force_finish' ? 'bg-amber-100 text-amber-700' : student.status === 'selesai' ? 'bg-gray-200 text-gray-700' : 'bg-emerald-100 text-emerald-700'}`}>{student.status}</span></td>
                          <td className="p-3 text-center"><button onClick={() => forceFinish(student.id)} disabled={student.status === 'selesai' || student.status === 'force_finish'} className="text-red-500 hover:text-white hover:bg-red-500 px-2 py-1 rounded-md text-xs font-bold disabled:opacity-30 whitespace-nowrap">Paksa Selesai</button></td>
@@ -173,21 +183,35 @@ export default function TeacherDashboard({ onLogout }) {
                </div>
              </div>
           )}
-           {activeTab === 'bank' && (
+          
+          {activeTab === 'bank' && (
             <div className="print:hidden">
               <div className="flex flex-col sm:flex-row justify-between gap-3 mb-6">
-                <div className="flex gap-2 w-full sm:w-auto">
-                  <button onClick={handleDownloadExcel} className="flex-1 sm:flex-none flex items-center justify-center gap-1 bg-white/70 dark:bg-gray-800/70 border border-emerald-200 dark:border-emerald-800 text-emerald-700 px-3 py-2 rounded-lg font-bold shadow-sm text-xs"><Download size={14}/> Template</button>
-                  <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleUploadExcel} />
-                  <button onClick={() => fileInputRef.current.click()} className="flex-1 sm:flex-none flex items-center justify-center gap-1 bg-amber-100 border border-amber-300 text-amber-700 px-3 py-2 rounded-lg font-bold shadow-sm text-xs"><Upload size={14}/> Upload</button>
+                
+                {/* PERBAIKAN: Filter Mapel untuk Bank Soal */}
+                <div className="flex items-center bg-white/70 dark:bg-gray-800/70 border border-emerald-200 dark:border-emerald-800 rounded-lg px-3 shadow-sm w-full sm:w-auto">
+                   <Filter size={16} className="text-emerald-600" />
+                   <select value={filterBankMapel} onChange={e => setFilterBankMapel(e.target.value)} className="bg-transparent border-none focus:ring-0 text-sm font-bold text-emerald-800 dark:text-emerald-300 py-2 w-full outline-none">
+                       <option value="">Semua Mata Pelajaran</option>
+                       {uniqueBankMapels.map(m => <option key={m} value={m}>{m}</option>)}
+                   </select>
                 </div>
-                <button onClick={() => { setEditId(null); setFormData({ pertanyaan: '', opsiA: '', opsiB: '', opsiC: '', opsiD: '', kunci: 'A' }); setShowModal(true); }} className="w-full sm:w-auto flex items-center justify-center gap-1 bg-gradient-to-r from-emerald-500 to-green-600 text-white px-4 py-2 rounded-lg shadow-md font-black text-xs"><Plus size={14}/> Buat Manual</button>
+
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
+                  <button onClick={handleDownloadExcel} className="flex items-center justify-center gap-1 bg-white/70 dark:bg-gray-800/70 border border-emerald-200 dark:border-emerald-800 text-emerald-700 px-3 py-2 rounded-lg font-bold shadow-sm text-xs"><Download size={14}/> Template</button>
+                  <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleUploadExcel} />
+                  <button onClick={() => fileInputRef.current.click()} className="flex items-center justify-center gap-1 bg-amber-100 border border-amber-300 text-amber-700 px-3 py-2 rounded-lg font-bold shadow-sm text-xs"><Upload size={14}/> Upload</button>
+                  <button onClick={() => { setEditId(null); setFormData({ mapel: '', pertanyaan: '', opsiA: '', opsiB: '', opsiC: '', opsiD: '', kunci: 'A' }); setShowModal(true); }} className="flex items-center justify-center gap-1 bg-gradient-to-r from-emerald-500 to-green-600 text-white px-3 py-2 rounded-lg shadow-md font-black text-xs"><Plus size={14}/> Manual</button>
+                </div>
               </div>
               <div className="bg-white/70 dark:bg-gray-800/70 rounded-xl shadow-sm border border-white/50 dark:border-gray-700 divide-y dark:divide-gray-700">
-                 {bankSoal.length === 0 && <p className="p-6 text-center text-gray-500 text-sm font-bold">Bank Soal Kosong.</p>}
-                 {bankSoal.map((soal, idx) => (
+                 {bankSoal.filter(s => filterBankMapel ? s.mapel === filterBankMapel : true).length === 0 && <p className="p-6 text-center text-gray-500 text-sm font-bold">Bank Soal Kosong / Tidak ada soal untuk mapel ini.</p>}
+                 {bankSoal.filter(s => filterBankMapel ? s.mapel === filterBankMapel : true).map((soal, idx) => (
                     <div key={soal.id} className="p-4 flex flex-col md:flex-row justify-between gap-3 text-sm">
                       <div className="w-full">
+                        <div className="flex items-center gap-2 mb-2">
+                           <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded font-black tracking-wider uppercase">{soal.mapel}</span>
+                        </div>
                         <p className="font-bold mb-2"><span className="text-emerald-500 mr-1">{idx + 1}.</span> {soal.pertanyaan}</p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-gray-600 dark:text-gray-300 text-xs">
                           <p>A. {soal.opsiA}</p><p>B. {soal.opsiB}</p><p>C. {soal.opsiC}</p><p>D. {soal.opsiD}</p>
@@ -195,31 +219,61 @@ export default function TeacherDashboard({ onLogout }) {
                         <p className="mt-2 inline-block bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-xs font-bold">Kunci: {soal.kunci}</p>
                       </div>
                       <div className="flex md:flex-col gap-2 justify-end">
-                        <button onClick={() => { setEditId(soal.id); setFormData(soal); setShowModal(true); }} className="flex-1 text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg text-xs font-bold">Edit</button>
-                        <button onClick={() => handleDeleteSoal(soal.id)} className="flex items-center justify-center text-red-500 bg-red-50 p-2 rounded-lg"><Trash2 size={14}/></button>
+                        <button onClick={() => { setEditId(soal.id); setFormData(soal); setShowModal(true); }} className="flex-1 text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200">Edit</button>
+                        <button onClick={() => handleDeleteSoal(soal.id)} className="flex items-center justify-center text-red-500 bg-red-50 p-2 rounded-lg border border-red-200"><Trash2 size={14}/></button>
                       </div>
                     </div>
                  ))}
               </div>
             </div>
           )}
-           {activeTab === 'rekap' && (
+          
+          {activeTab === 'rekap' && (
              <div className="print:block">
-               <div className="mb-4 flex justify-end print:hidden"><button onClick={() => window.print()} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-green-700 text-white px-4 py-2 rounded-lg font-bold shadow-md text-sm"><Printer size={14}/> Cetak PDF</button></div>
+               {/* PERBAIKAN: Filter Rekap Berdasarkan Mapel dan Kelas */}
+               <div className="mb-4 flex flex-col sm:flex-row justify-between gap-3 print:hidden">
+                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <div className="flex items-center bg-white/70 dark:bg-gray-800/70 border border-emerald-200 dark:border-emerald-800 rounded-lg px-3 shadow-sm w-full sm:w-auto">
+                        <Filter size={16} className="text-emerald-600" />
+                        <select value={filterRekapMapel} onChange={e => setFilterRekapMapel(e.target.value)} className="bg-transparent border-none focus:ring-0 text-sm font-bold text-emerald-800 dark:text-emerald-300 py-2 outline-none">
+                            <option value="">Semua Mapel</option>
+                            {uniqueRekapMapels.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                    </div>
+                    <div className="flex items-center bg-white/70 dark:bg-gray-800/70 border border-emerald-200 dark:border-emerald-800 rounded-lg px-3 shadow-sm w-full sm:w-auto">
+                        <Filter size={16} className="text-emerald-600" />
+                        <select value={filterRekapKelas} onChange={e => setFilterRekapKelas(e.target.value)} className="bg-transparent border-none focus:ring-0 text-sm font-bold text-emerald-800 dark:text-emerald-300 py-2 outline-none">
+                            <option value="">Semua Kelas</option>
+                            {uniqueRekapKelas.map(k => <option key={k} value={k}>{k}</option>)}
+                        </select>
+                    </div>
+                 </div>
+                 <button onClick={() => window.print()} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-green-700 text-white px-4 py-2 rounded-lg font-bold shadow-md text-sm"><Printer size={14}/> Cetak PDF</button>
+               </div>
+
                <div className="bg-white/70 dark:bg-gray-800/70 rounded-xl shadow-sm border border-white/50 dark:border-gray-700 overflow-x-auto w-full">
                  <table className="w-full text-left print:text-black print:border min-w-[400px]">
                    <thead className="bg-emerald-50/50 dark:bg-gray-700/50 text-sm">
-                     <tr><th className="p-3 font-bold">Rank</th><th className="p-3 font-bold">Nama Siswa</th><th className="p-3 font-bold">Kelas</th><th className="p-3 font-bold text-center">Nilai Akhir</th></tr>
+                     <tr><th className="p-3 font-bold">Rank</th><th className="p-3 font-bold">Nama Siswa</th><th className="p-3 font-bold">Mapel / Kelas</th><th className="p-3 font-bold text-center">Nilai Akhir</th></tr>
                    </thead>
                    <tbody className="divide-y dark:divide-gray-700 text-sm">
-                     {leaderboard.map((lb, idx) => (
-                       <tr key={lb.id} className="print:border-b"><td className="p-3 font-bold text-gray-500">#{idx + 1}</td><td className="p-3 font-medium">{lb.name}</td><td className="p-3">{lb.class}</td><td className="p-3 text-center font-black text-emerald-600">{lb.score}</td></tr>
+                     {leaderboard
+                        .filter(lb => filterRekapMapel ? lb.mapel === filterRekapMapel : true)
+                        .filter(lb => filterRekapKelas ? lb.class === filterRekapKelas : true)
+                        .map((lb, idx) => (
+                       <tr key={lb.id} className="print:border-b">
+                         <td className="p-3 font-bold text-gray-500">#{idx + 1}</td>
+                         <td className="p-3 font-medium">{lb.name}</td>
+                         <td className="p-3"><span className="font-bold">{lb.mapel}</span><br/><span className="text-xs text-gray-500">{lb.class}</span></td>
+                         <td className="p-3 text-center font-black text-emerald-600">{lb.score}</td>
+                       </tr>
                      ))}
                    </tbody>
                  </table>
                </div>
              </div>
           )}
+
            {activeTab === 'settings' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:hidden">
               <div className="lg:col-span-1 bg-white/70 dark:bg-gray-800/70 p-5 rounded-xl shadow-sm border border-white/50 dark:border-gray-700 h-fit">
@@ -247,11 +301,13 @@ export default function TeacherDashboard({ onLogout }) {
         </main>
       </div>
 
+      {/* MODAL TAMBAH SOAL MANUAL (Wajib isi Mapel) */}
       {showModal && (
         <div className="fixed inset-0 bg-emerald-950/40 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl p-5 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-white/50">
-            <h2 className="text-lg font-black mb-4 border-b border-gray-200 pb-2">Tulis Soal Baru</h2>
+            <h2 className="text-lg font-black mb-4 border-b border-gray-200 pb-2">{editId ? 'Edit Data Soal' : 'Tulis Soal Baru'}</h2>
             <form onSubmit={handleSaveSoal} className="space-y-3">
+              <div><label className="block font-bold text-xs mb-1 text-emerald-600">Mata Pelajaran (Wajib)</label><input required type="text" value={formData.mapel} onChange={e => setFormData({...formData, mapel: e.target.value})} className="w-full border-2 border-emerald-300 p-2 rounded-lg text-sm bg-emerald-50/30" placeholder="Contoh: Matematika" /></div>
               <div><label className="block font-bold text-sm mb-1">Pertanyaan</label><textarea required value={formData.pertanyaan} onChange={e => setFormData({...formData, pertanyaan: e.target.value})} className="w-full border border-gray-300 p-2 rounded-lg text-sm" rows="3"></textarea></div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div><label className="block font-bold text-xs mb-1">A</label><input required type="text" value={formData.opsiA} onChange={e => setFormData({...formData, opsiA: e.target.value})} className="w-full border border-gray-300 p-2 rounded-lg text-sm" /></div>
