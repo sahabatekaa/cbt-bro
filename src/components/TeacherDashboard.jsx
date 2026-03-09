@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ref, onValue, push, update, remove, get } from 'firebase/database';
 import { db, auth } from '../firebase';
-import { Users, BookOpen, Award, Settings, LogOut, Plus, Trash2, Printer, CheckCircle, Download, Upload, Menu, X, User, Filter } from 'lucide-react';
+import { Users, BookOpen, Award, Settings, LogOut, Plus, Trash2, Printer, CheckCircle, Download, Upload, Menu, X, User, Filter, Eye } from 'lucide-react';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
 import * as XLSX from 'xlsx';
 
@@ -14,14 +14,17 @@ export default function TeacherDashboard({ onLogout }) {
   const [sessions, setSessions] = useState([]);
   const [showModal, setShowModal] = useState(false);
   
-  // PERBAIKAN: Tambah field 'tingkat' di state form
   const [formData, setFormData] = useState({ mapel: '', tingkat: '', pertanyaan: '', opsiA: '', opsiB: '', opsiC: '', opsiD: '', kunci: 'A' });
   const [editId, setEditId] = useState(null);
   const [sessionForm, setSessionForm] = useState({ mapel: '', tingkat: '', kelas: '' });
   
+  // State Filter
   const [filterBankMapel, setFilterBankMapel] = useState('');
   const [filterRekapMapel, setFilterRekapMapel] = useState('');
   const [filterRekapKelas, setFilterRekapKelas] = useState('');
+  
+  // FITUR BARU: State untuk memilih Token mana yang mau dipantau di layar Live
+  const [selectedMonitorToken, setSelectedMonitorToken] = useState('');
 
   const fileInputRef = useRef(null);
   const [teacherProfile, setTeacherProfile] = useState({ nama: 'Memuat...', email: '' });
@@ -55,7 +58,6 @@ export default function TeacherDashboard({ onLogout }) {
   };
   const handleDeleteSoal = (id) => { if(window.confirm('Hapus soal ini?')) remove(ref(db, `bank_soal/${id}`)); };
 
-  // PERBAIKAN: Template Excel wajib ada kolom 'Tingkat'
   const handleDownloadExcel = () => {
     const ws = XLSX.utils.json_to_sheet([{ Mapel: "Matematika", Tingkat: "7", Pertanyaan: "Contoh Soal", OpsiA: "A", OpsiB: "B", OpsiC: "C", OpsiD: "D", Kunci: "A" }]);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Soal"); XLSX.writeFile(wb, "Template_Multi_Ujian.xlsx");
@@ -69,7 +71,6 @@ export default function TeacherDashboard({ onLogout }) {
         const data = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
         let count = 0;
         data.forEach(row => { 
-            // Wajib ada kolom Tingkat di Excel
             if (row.Mapel && row.Tingkat && row.Pertanyaan && row.OpsiA && row.Kunci) { 
                 push(ref(db, 'bank_soal'), { mapel: row.Mapel, tingkat: String(row.Tingkat), pertanyaan: row.Pertanyaan, opsiA: row.OpsiA, opsiB: row.OpsiB, opsiC: row.OpsiC, opsiD: row.OpsiD, kunci: row.Kunci }); 
                 count++; 
@@ -83,16 +84,27 @@ export default function TeacherDashboard({ onLogout }) {
 
   const handleCreateSession = (e) => {
     e.preventDefault();
-    push(ref(db, 'active_sessions'), { mapel: sessionForm.mapel, tingkat: sessionForm.tingkat, kelas: sessionForm.kelas.toUpperCase(), token: Math.random().toString(36).substring(2, 8).toUpperCase(), status: 'active', timestamp: Date.now() });
+    const newToken = Math.random().toString(36).substring(2, 8).toUpperCase();
+    push(ref(db, 'active_sessions'), { mapel: sessionForm.mapel, tingkat: sessionForm.tingkat, kelas: sessionForm.kelas.toUpperCase(), token: newToken, status: 'active', timestamp: Date.now() });
+    
+    // Otomatis pindahkan pantauan ke sesi yang baru dibuat
+    setSelectedMonitorToken(newToken);
     setSessionForm({ mapel: '', tingkat: '', kelas: '' });
   };
+  
   const toggleSessionStatus = (id, currentStatus) => update(ref(db, `active_sessions/${id}`), { status: currentStatus === 'active' ? 'expired' : 'active' });
   const deleteSession = (id) => { if(window.confirm('Hapus sesi?')) remove(ref(db, `active_sessions/${id}`)); };
 
-  const activeTokensList = sessions.filter(s => s.status === 'active').map(s => s.token).join(', ') || 'TIDAK ADA';
+  // Data olahan
+  const activeSessionsList = sessions.filter(s => s.status === 'active');
   const uniqueBankMapels = [...new Set(bankSoal.map(s => s.mapel))].filter(Boolean);
   const uniqueRekapMapels = [...new Set(leaderboard.map(s => s.mapel))].filter(Boolean);
   const uniqueRekapKelas = [...new Set(leaderboard.map(s => s.class))].filter(Boolean);
+  
+  // Filter Live Students berdasarkan Token yang dipilih
+  const monitoredStudents = selectedMonitorToken 
+    ? liveStudents.filter(s => s.token === selectedMonitorToken) 
+    : liveStudents;
 
   return (
     <div className="flex h-screen overflow-hidden bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-950 dark:to-emerald-900 text-gray-900 dark:text-gray-100 font-sans relative">
@@ -133,18 +145,34 @@ export default function TeacherDashboard({ onLogout }) {
       <div className="flex-1 overflow-y-auto p-4 md:p-8 w-full pb-20">
         <header className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl shadow-sm rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center print:hidden border border-white/50 dark:border-gray-700 mb-6 gap-3">
           <h1 className="text-lg md:text-xl font-black text-emerald-900 dark:text-emerald-100 ml-10 lg:ml-0">Dasbor Guru</h1>
-          <div className="px-3 py-1.5 text-xs md:text-sm bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded-full font-black border border-emerald-200 dark:border-emerald-700 shadow-sm truncate w-full sm:w-auto">
-            Token Aktif: <span className="text-emerald-600 dark:text-emerald-400 tracking-widest">{activeTokensList}</span>
+          
+          {/* FITUR BARU: Dropdown Pemilihan Token Pantauan */}
+          <div className="w-full sm:w-auto bg-emerald-100/80 dark:bg-emerald-900/60 rounded-lg md:rounded-full border border-emerald-200 dark:border-emerald-700 shadow-sm flex items-center px-3 py-1.5 md:py-2 overflow-hidden">
+            <Eye size={16} className="text-emerald-700 dark:text-emerald-400 mr-2 shrink-0" />
+            <span className="text-xs md:text-sm font-bold text-emerald-800 dark:text-emerald-300 whitespace-nowrap mr-2 hidden md:inline">Pantau:</span>
+            <select 
+                value={selectedMonitorToken} 
+                onChange={(e) => setSelectedMonitorToken(e.target.value)} 
+                className="bg-transparent border-none outline-none text-xs md:text-sm font-black text-emerald-700 dark:text-emerald-400 w-full focus:ring-0 cursor-pointer p-0"
+            >
+                <option value="">Semua Sesi Aktif</option>
+                {activeSessionsList.map(s => (
+                    <option key={s.token} value={s.token}>
+                        Kelas {s.kelas} - {s.token}
+                    </option>
+                ))}
+            </select>
           </div>
         </header>
 
         <main>
           {activeTab === 'proctor' && (
              <div className="print:hidden">
+               {/* Angka Metrik Berdasarkan monitoredStudents */}
                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-                 <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-xl shadow-sm border-l-4 border-emerald-500 backdrop-blur-md"><p className="text-xs text-gray-500 font-semibold mb-1">Terhubung</p><h3 className="text-2xl font-black">{liveStudents.length}</h3></div>
-                 <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-xl shadow-sm border-l-4 border-green-500 backdrop-blur-md"><p className="text-xs text-gray-500 font-semibold mb-1">Selesai</p><h3 className="text-2xl font-black text-green-600">{liveStudents.filter(s => s.status === 'selesai').length}</h3></div>
-                 <div className="col-span-2 md:col-span-1 bg-white/70 dark:bg-gray-800/70 p-4 rounded-xl shadow-sm border-l-4 border-red-500 backdrop-blur-md"><p className="text-xs text-gray-500 font-semibold mb-1">Indikasi Curang</p><h3 className="text-2xl font-black text-red-600">{liveStudents.filter(s => s.warnings > 0).length}</h3></div>
+                 <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-xl shadow-sm border-l-4 border-emerald-500 backdrop-blur-md"><p className="text-xs text-gray-500 font-semibold mb-1">Terhubung</p><h3 className="text-2xl font-black">{monitoredStudents.length}</h3></div>
+                 <div className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-xl shadow-sm border-l-4 border-green-500 backdrop-blur-md"><p className="text-xs text-gray-500 font-semibold mb-1">Selesai</p><h3 className="text-2xl font-black text-green-600">{monitoredStudents.filter(s => s.status === 'selesai').length}</h3></div>
+                 <div className="col-span-2 md:col-span-1 bg-white/70 dark:bg-gray-800/70 p-4 rounded-xl shadow-sm border-l-4 border-red-500 backdrop-blur-md"><p className="text-xs text-gray-500 font-semibold mb-1">Indikasi Curang</p><h3 className="text-2xl font-black text-red-600">{monitoredStudents.filter(s => s.warnings > 0).length}</h3></div>
                </div>
                <div className="bg-white/70 dark:bg-gray-800/70 rounded-xl shadow-sm overflow-x-auto border border-white/50 dark:border-gray-700 w-full">
                  <table className="w-full text-left min-w-[600px]">
@@ -152,15 +180,19 @@ export default function TeacherDashboard({ onLogout }) {
                      <tr><th className="p-3 font-bold">Nama Siswa</th><th className="p-3 font-bold">Mapel / Kls</th><th className="p-3 font-bold">Progress</th><th className="p-3 font-bold">Status</th><th className="p-3 font-bold text-center">Aksi</th></tr>
                    </thead>
                    <tbody className="divide-y dark:divide-gray-700 text-sm">
-                     {liveStudents.map(student => (
-                       <tr key={student.id}>
-                         <td className="p-3 font-medium">{student.name}</td>
-                         <td className="p-3"><span className="font-bold">{student.mapel}</span> <span className="text-xs bg-emerald-100 text-emerald-800 px-1 rounded ml-1">Tk.{student.tingkat}</span><br/><span className="text-xs text-gray-500">{student.class}</span></td>
-                         <td className="p-3"><div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-emerald-600 h-2 rounded-full" style={{ width: `${student.progress || 0}%` }}></div></div></td>
-                         <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs font-bold whitespace-nowrap ${student.status === 'force_finish' ? 'bg-amber-100 text-amber-700' : student.status === 'selesai' ? 'bg-gray-200 text-gray-700' : 'bg-emerald-100 text-emerald-700'}`}>{student.status}</span></td>
-                         <td className="p-3 text-center"><button onClick={() => forceFinish(student.id)} disabled={student.status === 'selesai' || student.status === 'force_finish'} className="text-red-500 hover:text-white hover:bg-red-500 px-2 py-1 rounded-md text-xs font-bold disabled:opacity-30 whitespace-nowrap">Paksa Selesai</button></td>
-                       </tr>
-                     ))}
+                     {monitoredStudents.length === 0 ? (
+                         <tr><td colSpan="5" className="p-6 text-center text-gray-500 font-medium">Belum ada siswa yang bergabung di sesi ini.</td></tr>
+                     ) : (
+                         monitoredStudents.map(student => (
+                           <tr key={student.id}>
+                             <td className="p-3 font-medium">{student.name}</td>
+                             <td className="p-3"><span className="font-bold">{student.mapel}</span> <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1 rounded ml-1">Tk.{student.tingkat}</span><br/><span className="text-xs text-gray-500">{student.class}</span></td>
+                             <td className="p-3"><div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-emerald-600 h-2 rounded-full" style={{ width: `${student.progress || 0}%` }}></div></div></td>
+                             <td className="p-3"><span className={`px-2 py-1 rounded-full text-[10px] sm:text-xs font-bold whitespace-nowrap ${student.status === 'force_finish' ? 'bg-amber-100 text-amber-700' : student.status === 'selesai' ? 'bg-gray-200 text-gray-700' : 'bg-emerald-100 text-emerald-700'}`}>{student.status}</span></td>
+                             <td className="p-3 text-center"><button onClick={() => forceFinish(student.id)} disabled={student.status === 'selesai' || student.status === 'force_finish'} className="text-red-500 hover:text-white hover:bg-red-500 px-2 py-1 rounded-md text-xs font-bold disabled:opacity-30 whitespace-nowrap">Paksa Selesai</button></td>
+                           </tr>
+                         ))
+                     )}
                    </tbody>
                  </table>
                </div>
@@ -185,7 +217,7 @@ export default function TeacherDashboard({ onLogout }) {
                 </div>
               </div>
               <div className="bg-white/70 dark:bg-gray-800/70 rounded-xl shadow-sm border border-white/50 dark:border-gray-700 divide-y dark:divide-gray-700">
-                 {bankSoal.filter(s => filterBankMapel ? s.mapel === filterBankMapel : true).length === 0 && <p className="p-6 text-center text-gray-500 text-sm font-bold">Bank Soal Kosong.</p>}
+                 {bankSoal.filter(s => filterBankMapel ? s.mapel === filterBankMapel : true).length === 0 && <p className="p-6 text-center text-gray-500 text-sm font-bold">Bank Soal Kosong / Tidak ada soal untuk mapel ini.</p>}
                  {bankSoal.filter(s => filterBankMapel ? s.mapel === filterBankMapel : true).map((soal, idx) => (
                     <div key={soal.id} className="p-4 flex flex-col md:flex-row justify-between gap-3 text-sm">
                       <div className="w-full">
@@ -250,10 +282,7 @@ export default function TeacherDashboard({ onLogout }) {
                 <h2 className="text-base font-black mb-4 text-emerald-700">Buat Sesi Baru</h2>
                 <form onSubmit={handleCreateSession} className="space-y-3">
                   <div><label className="block text-xs font-bold mb-1">Mata Pelajaran</label><input type="text" required value={sessionForm.mapel} onChange={e => setSessionForm({...sessionForm, mapel: e.target.value})} className="w-full border border-emerald-200 bg-white/50 p-2 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm" placeholder="Contoh: Matematika" /></div>
-                  
-                  {/* PERBAIKAN: Input Tingkat Kelas */}
                   <div><label className="block text-xs font-bold mb-1 text-emerald-700">Tingkat Kelas (Angka/Romawi)</label><input type="text" required value={sessionForm.tingkat} onChange={e => setSessionForm({...sessionForm, tingkat: e.target.value})} className="w-full border-2 border-emerald-300 bg-emerald-50/30 p-2 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm" placeholder="Contoh: 7 atau IX" /></div>
-
                   <div><label className="block text-xs font-bold mb-1">Nama Ruang / Kelas</label><input type="text" required value={sessionForm.kelas} onChange={e => setSessionForm({...sessionForm, kelas: e.target.value})} className="w-full border border-emerald-200 bg-white/50 p-2 rounded-lg uppercase focus:ring-2 focus:ring-emerald-500 text-sm" placeholder="Contoh: 7A" /></div>
                   <button type="submit" className="w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white font-black py-2.5 rounded-lg shadow-md text-sm mt-2">Generate Token</button>
                 </form>
