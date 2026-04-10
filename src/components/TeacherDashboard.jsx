@@ -3,7 +3,7 @@ import { db, auth } from '../firebase';
 import { ref, onValue, push, remove, update } from 'firebase/database';
 import { 
   Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, 
-  Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, ChevronDown 
+  Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, ChevronDown, GraduationCap
 } from 'lucide-react';
 
 const TeacherDashboard = ({ onLogout }) => {
