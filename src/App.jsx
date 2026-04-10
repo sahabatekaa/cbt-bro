@@ -74,23 +74,21 @@ export default function App() {
         await document.documentElement.requestFullscreen().catch(err => console.log(err));
       }
 
-try {
-  const newStudentRef = push(ref(db, 'live_students'));
+     try {
+       const newStudentRef = push(ref(db, 'live_students'));
   // Menyimpan data ke database live
-  await set(newStudentRef, {
-    name: name,
-    class: kelas,
-    token: token,              // <--- Di sini letaknya!
-    mapel: validSession.mapel,
+    await set(newStudentRef, {
+       name: name,
+       class: kelas,
+       token: token,              // <--- Di sini letaknya!
+       mapel: validSession.mapel,
     status: 'Online',          // Wajib untuk warna status
     progress: 0,               // Wajib untuk progress bar
     warnings: 0,               // Wajib untuk indikasi curang
     timestamp: Date.now()
   });
 
-  // Menyimpan data ke session lokal
-  // ... (lanjutkan kode Anda yang bawahnya) ...
-        // Menyimpan data tingkat ke session lokal
+ 
         setStudentSession({ 
             studentName: name, studentClass: kelas, studentId: newStudentRef.key, mapel: validSession.mapel, tingkat: validSession.tingkat 
         });
