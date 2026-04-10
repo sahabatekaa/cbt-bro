@@ -15,6 +15,7 @@ export default function App() {
   const [studentSession, setStudentSession] = useState(() => JSON.parse(localStorage.getItem('studentSession')) || null);
   const [examScore, setExamScore] = useState(0);
   const [logoClicks, setLogoClicks] = useState(0);
+  const [activeSessions, setActiveSessions] = useState([]);
 
   useEffect(() => {
     localStorage.setItem('currentView', currentView);
@@ -63,38 +64,58 @@ export default function App() {
       });
       return () => unsubscribe();
     }, []);
+    useEffect(() => {
+  // Menarik data sesi yang statusnya 'open' saja dari Firebase
+  const sessionRef = ref(db, 'exam_sessions');
+  const unsubscribe = onValue(sessionRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+      const list = Object.values(data).filter(s => s.status === 'open');
+      setActiveSessions(list);
+    } else {
+      setActiveSessions([]);
+    }
+  });
+  return () => unsubscribe();
+}, []);
+
+// Ambil daftar kelas unik untuk dropdown otomatis
+const availableClasses = [...new Set(activeSessions.map(s => s.kelas))];
 
     const handleStudentStart = async (e) => {
-      e.preventDefault();
-      // Validasi Token dan Kelas
-      const validSession = activeSessions.find(s => s.token === token && s.kelas === kelas);
-      if (!validSession) return alert("AKSES DITOLAK: Token tidak valid atau kelas salah!");
+  e.preventDefault();
+  const name = e.target.studentName.value;
+  const sClass = e.target.studentClass.value;
+  const tokenInput = e.target.token.value.toUpperCase();
 
-      if (document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen().catch(err => console.log(err));
-      }
+  // Validasi: Cek apakah token dan kelas ini ada di database sesi
+  const validSession = activeSessions.find(s => s.token === tokenInput && s.kelas === sClass);
 
-     try {
-       const newStudentRef = push(ref(db, 'live_students'));
-  // Menyimpan data ke database live
-    await set(newStudentRef, {
-       name: name,
-       class: kelas,
-       token: token,              // <--- Di sini letaknya!
-       mapel: validSession.mapel,
-    status: 'Online',          // Wajib untuk warna status
-    progress: 0,               // Wajib untuk progress bar
-    warnings: 0,               // Wajib untuk indikasi curang
-    timestamp: Date.now()
-  });
+  if (!validSession) {
+    return alert("AKSES DITOLAK: Token atau Kelas tidak ditemukan pada sesi aktif!");
+  }
 
- 
-        setStudentSession({ 
-            studentName: name, studentClass: kelas, studentId: newStudentRef.key, mapel: validSession.mapel, tingkat: validSession.tingkat 
-        });
-        setCurrentView('exam');
-      } catch (error) { alert("Gagal terhubung ke server ujian."); }
-    };
+  try {
+    const newRef = push(ref(db, 'live_students'));
+    await set(newRef, { 
+      id: newRef.key, 
+      name, 
+      class: sClass, 
+      token: tokenInput, 
+      mapel: validSession.mapel, // Ambil mapel otomatis dari sesi
+      status: 'Online', 
+      progress: 0, 
+      warnings: 0, 
+      timestamp: Date.now() 
+    });
+    
+    setStudentData({ id: newRef.key, name, class: sClass, token: tokenInput });
+    localStorage.setItem('studentData', JSON.stringify({ id: newRef.key, name, class: sClass, token: tokenInput }));
+    setCurrentView('exam');
+  } catch (err) {
+    alert("Gagal terhubung ke database!");
+  }
+};
 
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-950 dark:to-emerald-900 p-4 transition-colors">
@@ -113,10 +134,16 @@ export default function App() {
             </div>
             <div>
               <label className="block text-sm font-bold text-emerald-800 dark:text-emerald-200 mb-1">Pilih Kelas</label>
-              <select required value={kelas} onChange={e => setKelas(e.target.value)} className="w-full px-4 py-3 border border-emerald-200 dark:border-emerald-800 rounded-xl focus:ring-4 focus:ring-emerald-500/30 bg-white/80 dark:bg-gray-800/80 dark:text-white transition-all shadow-inner text-sm md:text-base">
-                <option value="">-- Pilih Kelas Aktif --</option>
-                {availableClasses.map(kls => <option key={kls} value={kls}>{kls}</option>)}
-              </select>
+              <select name="studentClass" required className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl font-bold text-emerald-800">
+  <option value="">-- Pilih Kelas Anda --</option>
+  {availableClasses.length > 0 ? (
+    availableClasses.map((c, index) => (
+      <option key={index} value={c}>{c}</option>
+    ))
+  ) : (
+    <option disabled>Tidak ada sesi kelas aktif</option>
+  )}
+</select>
             </div>
             <div>
               <label className="block text-sm font-bold text-emerald-800 dark:text-emerald-200 mb-1">Token Ujian</label>
