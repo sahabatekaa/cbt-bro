@@ -18,6 +18,38 @@ export default function App() {
   const [activeSessions, setActiveSessions] = useState([]);
 
   useEffect(() => {
+      const unsubscribe = onValue(ref(db, 'active_sessions'), (snapshot) => {
+        if (snapshot.exists()) {
+          const sessions = Object.values(snapshot.val());
+          const active = sessions.filter(s => s.status === 'active');
+          setActiveSessions(active);
+          setAvailableClasses([...new Set(active.map(s => s.kelas))]);
+        } else {
+          setActiveSessions([]);
+          setAvailableClasses([]);
+        }
+      });
+      return () => unsubscribe();
+    }, []);
+    useEffect(() => {
+  // Menarik data sesi yang statusnya 'open' saja dari Firebase
+  const sessionRef = ref(db, 'exam_sessions');
+  const unsubscribe = onValue(sessionRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+      const list = Object.values(data).filter(s => s.status === 'open');
+      setActiveSessions(list);
+    } else {
+      setActiveSessions([]);
+    }
+  });
+  return () => unsubscribe();
+}, []);
+
+// Ambil daftar kelas unik untuk dropdown otomatis
+const availableClasses = [...new Set(activeSessions.map(s => s.kelas))];
+
+  useEffect(() => {
     localStorage.setItem('currentView', currentView);
     localStorage.setItem('darkMode', darkMode);
     if (studentSession) localStorage.setItem('studentSession', JSON.stringify(studentSession));
@@ -50,37 +82,6 @@ export default function App() {
     const [availableClasses, setAvailableClasses] = useState([]);
     const [activeSessions, setActiveSessions] = useState([]);
 
-    useEffect(() => {
-      const unsubscribe = onValue(ref(db, 'active_sessions'), (snapshot) => {
-        if (snapshot.exists()) {
-          const sessions = Object.values(snapshot.val());
-          const active = sessions.filter(s => s.status === 'active');
-          setActiveSessions(active);
-          setAvailableClasses([...new Set(active.map(s => s.kelas))]);
-        } else {
-          setActiveSessions([]);
-          setAvailableClasses([]);
-        }
-      });
-      return () => unsubscribe();
-    }, []);
-    useEffect(() => {
-  // Menarik data sesi yang statusnya 'open' saja dari Firebase
-  const sessionRef = ref(db, 'exam_sessions');
-  const unsubscribe = onValue(sessionRef, (snapshot) => {
-    const data = snapshot.val();
-    if (data) {
-      const list = Object.values(data).filter(s => s.status === 'open');
-      setActiveSessions(list);
-    } else {
-      setActiveSessions([]);
-    }
-  });
-  return () => unsubscribe();
-}, []);
-
-// Ambil daftar kelas unik untuk dropdown otomatis
-const availableClasses = [...new Set(activeSessions.map(s => s.kelas))];
 
     const handleStudentStart = async (e) => {
   e.preventDefault();
