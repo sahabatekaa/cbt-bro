@@ -66,7 +66,7 @@ export default function App() {
         id: newRef.key, 
         name, 
         class: sClass, 
-        kelas: sClass
+        kelas: sClass, 
         token: tokenInput,
         mapel: validSession.mapel, // Tarik Mapel otomatis dari sesi guru
         status: 'Online', 
