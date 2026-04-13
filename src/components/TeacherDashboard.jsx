@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from '../firebase';
 import { ref, onValue, push, remove, update } from 'firebase/database';
-import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { 
+  Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, 
+  Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap 
+} from 'lucide-react';
 
 export default function TeacherDashboard({ onLogout }) {
   const [activeTab, setActiveTab] = useState('settings');
@@ -13,8 +17,10 @@ export default function TeacherDashboard({ onLogout }) {
   const [showModal, setShowModal] = useState(false);
   const [activeMonitorToken, setActiveMonitorToken] = useState(localStorage.getItem('activeMonitorToken') || '');
   
-  const [recapFilterMapel, setRecapFilterMapel] = useState(''); // State filter mapel rekap
+  const [recapFilterMapel, setRecapFilterMapel] = useState('');
   const [teacherProfile, setTeacherProfile] = useState({ name: 'Memuat...', email: auth.currentUser?.email });
+  
+  const fileInputRef = useRef(null); // Penting untuk fitur Upload Excel
 
   const currentUserEmail = auth.currentUser?.email || 'guru@unknown.com';
 
@@ -22,13 +28,20 @@ export default function TeacherDashboard({ onLogout }) {
 
   // Ambil Data dari Firebase
   useEffect(() => {
-    // Tarik profil guru
+    // 1. Tarik profil guru dengan cerdas (Handle Akun Baru & Lama)
     if(auth.currentUser) {
       onValue(ref(db, `users/${auth.currentUser.uid}`), snap => {
-        if(snap.exists()) setTeacherProfile(snap.val());
-        else setTeacherProfile({ name: 'Guru Pengawas', email: currentUserEmail });
+        if(snap.exists() && snap.val().name) {
+          setTeacherProfile(snap.val());
+        } else {
+          // Jika akun lama (tidak ada data nama), gunakan potongan email
+          const fallbackName = currentUserEmail.split('@')[0];
+          setTeacherProfile({ name: fallbackName, email: currentUserEmail });
+        }
       });
     }
+
+    // 2. Tarik data lainnya
     onValue(ref(db, 'live_students'), snap => setLiveStudents(snap.val() ? Object.keys(snap.val()).map(k => ({ id: k, ...snap.val()[k] })) : []));
     onValue(ref(db, 'bank_soal'), snap => setBankSoal(snap.val() ? Object.keys(snap.val()).map(k => ({ id: k, ...snap.val()[k] })) : []));
     onValue(ref(db, 'leaderboard'), snap => setLeaderboard(snap.val() ? Object.values(snap.val()).sort((a, b) => b.score - a.score) : []));
@@ -41,11 +54,10 @@ export default function TeacherDashboard({ onLogout }) {
 
   const availableMapel = [...new Set(myQuestions.map(q => q.mapel).filter(Boolean))];
   const availableKelas = [...new Set(myQuestions.map(q => q.kelas).filter(Boolean))];
-  
-  // Ambil daftar mapel khusus dari data nilai (untuk dropdown filter cetak)
   const availableRecapMapel = [...new Set(leaderboard.map(s => s.mapel).filter(Boolean))];
   const filteredLeaderboard = leaderboard.filter(s => recapFilterMapel === '' || s.mapel === recapFilterMapel);
 
+  // ================= FITUR EXCEL & BANK SOAL =================
   const handleAddSoal = (e) => {
     e.preventDefault();
     push(ref(db, 'bank_soal'), { ...formData, teacherEmail: currentUserEmail });
@@ -53,6 +65,37 @@ export default function TeacherDashboard({ onLogout }) {
     setFormData({ ...formData, pertanyaan: '', opsiA: '', opsiB: '', opsiC: '', opsiD: '', kunci: 'A' });
   };
 
+  const downloadTemplate = () => {
+    const template = [{ mapel: "Matematika", kelas: "IX-A", pertanyaan: "Contoh Soal 1", opsiA: "A", opsiB: "B", opsiC: "C", opsiD: "D", kunci: "A" }];
+    const ws = XLSX.utils.json_to_sheet(template);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "TemplateSoal");
+    XLSX.writeFile(wb, "Template_CBT_Soal.xlsx");
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws);
+      let count = 0;
+      data.forEach(item => {
+        if (item.pertanyaan && item.kunci) {
+          push(ref(db, 'bank_soal'), { ...item, teacherEmail: currentUserEmail });
+          count++;
+        }
+      });
+      alert(`${count} Soal berhasil di-import dari Excel!`);
+      if(fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // ================= FITUR SESI =================
   const handleCreateSession = (e) => {
     e.preventDefault();
     const token = document.getElementById('token_input').value;
@@ -107,7 +150,7 @@ export default function TeacherDashboard({ onLogout }) {
         </div>
         <div className="p-4 border-b border-gray-100">
           <p className="text-xs font-bold text-emerald-500 uppercase mb-1">Guru Mapel</p>
-          <p className="text-sm font-bold text-slate-800 truncate" title={teacherProfile.name}>{teacherProfile.name}</p>
+          <p className="text-sm font-bold text-slate-800 truncate uppercase" title={teacherProfile.name}>{teacherProfile.name}</p>
         </div>
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           <NavItem tab="settings" icon={Settings} label="Sesi Ujian" />
@@ -126,12 +169,12 @@ export default function TeacherDashboard({ onLogout }) {
             <button className="md:hidden p-2 hover:bg-gray-100 rounded-lg" onClick={() => setIsMobileMenuOpen(true)}><Menu size={24} /></button>
             <h2 className="text-xl font-bold text-slate-800 capitalize">Dasbor Guru</h2>
           </div>
-          <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-black">{teacherProfile.name.charAt(0).toUpperCase()}</div>
+          <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-black uppercase">{teacherProfile.name.charAt(0)}</div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50">
           
-          {/* TAB MONITOR LIVE & SESI UJIAN SAMA SEPERTI SEBELUMNYA */}
+          {/* TAB MONITOR LIVE */}
           {activeTab === 'proctor' && (
             <div className="space-y-6">
               <div className="bg-emerald-100 text-emerald-800 p-4 rounded-xl flex items-center justify-between gap-2 border border-emerald-200">
@@ -166,6 +209,7 @@ export default function TeacherDashboard({ onLogout }) {
             </div>
           )}
 
+          {/* TAB SESI UJIAN */}
           {activeTab === 'settings' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-fit">
@@ -191,39 +235,40 @@ export default function TeacherDashboard({ onLogout }) {
             </div>
           )}
 
+          {/* TAB BANK SOAL (Fitur Excel Menyala Penuh) */}
           {activeTab === 'bank' && (
             <div className="space-y-6 max-w-5xl mx-auto">
-              <button onClick={() => setShowModal(true)} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-medium"><Plus size={18}/> Buat Soal Manual</button>
+              {/* Input rahasia untuk membaca file excel */}
+              <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+              
+              <div className="flex flex-wrap gap-3">
+                <button onClick={() => setShowModal(true)} className="flex-1 sm:flex-none bg-emerald-600 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 font-medium"><Plus size={18}/> Buat Soal Manual</button>
+                <button onClick={downloadTemplate} className="flex-1 sm:flex-none bg-white border px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 font-medium"><Download size={18}/> Download Template</button>
+                <button onClick={() => fileInputRef.current.click()} className="flex-1 sm:flex-none bg-white border border-emerald-300 text-emerald-800 px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 font-medium"><Upload size={18}/> Import Excel</button>
+              </div>
               <div className="grid grid-cols-1 gap-4">
                 {myQuestions.map((q, idx) => (
                   <div key={q.id} className="bg-white p-6 rounded-2xl border border-gray-100 flex gap-6 shadow-sm"><div className="flex-1"><div className="flex gap-2 mb-3"><span className="bg-emerald-50 text-emerald-800 border border-emerald-100 text-xs px-2.5 py-1 rounded font-bold">{q.mapel}</span><span className="bg-gray-100 text-gray-700 text-xs px-2.5 py-1 rounded font-bold">{q.kelas}</span></div><p className="font-bold text-slate-800 mb-4">{idx + 1}. {q.pertanyaan}</p><div className="grid grid-cols-2 gap-2 text-sm text-slate-700"><div className={`p-2 rounded-lg border ${q.kunci==='A'?'bg-emerald-50 text-emerald-900 font-bold border-emerald-200':'border-gray-100'}`}>A. {q.opsiA}</div><div className={`p-2 rounded-lg border ${q.kunci==='B'?'bg-emerald-50 text-emerald-900 font-bold border-emerald-200':'border-gray-100'}`}>B. {q.opsiB}</div><div className={`p-2 rounded-lg border ${q.kunci==='C'?'bg-emerald-50 text-emerald-900 font-bold border-emerald-200':'border-gray-100'}`}>C. {q.opsiC}</div><div className={`p-2 rounded-lg border ${q.kunci==='D'?'bg-emerald-50 text-emerald-900 font-bold border-emerald-200':'border-gray-100'}`}>D. {q.opsiD}</div></div></div><div className="flex items-center justify-center border-l pl-6"><button onClick={() => remove(ref(db, `bank_soal/${q.id}`))} className="text-red-500 bg-red-50 p-3 rounded-xl"><Trash2 size={20}/></button></div></div>
                 ))}
+                {myQuestions.length === 0 && <div className="text-center p-10 text-gray-500">Soal Anda belum ada. Silakan Tambah Manual atau Import Excel.</div>}
               </div>
             </div>
           )}
 
-          {/* TAB REKAP NILAI & CETAK DENGAN FILTER MAPEL */}
+          {/* TAB REKAP NILAI & CETAK */}
           {activeTab === 'recap' && (
             <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100 max-w-5xl mx-auto print:shadow-none print:border-none print:p-0">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4 print:hidden">
                 <h3 className="text-xl font-bold">Rekapitulasi Nilai</h3>
-                
                 <div className="flex gap-2 w-full sm:w-auto">
-                  {/* Dropdown Filter Mapel */}
-                  <select 
-                    value={recapFilterMapel} 
-                    onChange={(e) => setRecapFilterMapel(e.target.value)} 
-                    className="p-2.5 rounded-xl border border-gray-200 bg-gray-50 outline-none font-semibold text-slate-700 flex-1 sm:flex-none"
-                  >
+                  <select value={recapFilterMapel} onChange={(e) => setRecapFilterMapel(e.target.value)} className="p-2.5 rounded-xl border border-gray-200 bg-gray-50 outline-none font-semibold text-slate-700 flex-1 sm:flex-none">
                     <option value="">Semua Mapel</option>
                     {availableRecapMapel.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
-
                   <button onClick={() => window.print()} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold"><Download size={18}/> Cetak</button>
                 </div>
               </div>
               
-              {/* KOP SURAT PRINT */}
               <div className="hidden print:block mb-8 border-b-4 border-double border-black pb-4 text-center">
                 <h1 className="text-2xl font-black uppercase tracking-widest text-black">MTS DARMA PERTIWI</h1>
                 <h2 className="text-lg font-bold text-black mt-1">SISTEM UJIAN BERBASIS KOMPUTER (CBT)</h2>
@@ -254,7 +299,6 @@ export default function TeacherDashboard({ onLogout }) {
                 </tbody>
               </table>
               
-              {/* TANDA TANGAN PRINT DENGAN NAMA GURU */}
               <div className="hidden print:flex justify-end mt-16 pt-8">
                 <div className="text-center">
                   <p className="text-black mb-16">Mengetahui,<br/>Guru Mata Pelajaran</p>
