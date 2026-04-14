@@ -17,7 +17,7 @@
     "xlsx": "^0.18.5",
     "katex": "^0.16.9",
     "react-latex-next": "^2.2.0"
-  }
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/react": "^19.2.7",
