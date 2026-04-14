@@ -16,7 +16,14 @@ export default function ExamRoom({ studentData, onFinish }) {
     onValue(ref(db, 'bank_soal'), (snap) => {
       if (snap.val()) {
         const allQ = Object.keys(snap.val()).map(k => ({ id: k, ...snap.val()[k] }));
-        setQuestions(allQ.filter(q => q.mapel === studentData.mapel && q.kelas === studentData.class && q.teacherEmail === studentData.teacherEmail));
+        
+        // Soal dipukul rata untuk 1 tingkat/kelas (Sub Kelas/Ruang diabaikan)
+        const filtered = allQ.filter(q => 
+          q.mapel === studentData.mapel && 
+          q.kelas === studentData.class && 
+          q.teacherEmail === studentData.teacherEmail
+        );
+        setQuestions(filtered);
       }
     });
     
@@ -50,7 +57,6 @@ export default function ExamRoom({ studentData, onFinish }) {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6 font-sans pb-24">
-      {/* HEADER RESPONSIVE */}
       <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-between items-center bg-white p-4 rounded-2xl shadow-sm mb-4 gap-3 border border-gray-100">
         <div className="text-center sm:text-left">
           <p className="font-bold text-slate-800 text-lg">{studentData.name}</p>
@@ -71,7 +77,6 @@ export default function ExamRoom({ studentData, onFinish }) {
         ))}</div>
       </div>
 
-      {/* TOMBOL NAVIGASI RESPONSIVE (Membungkus ke bawah kalau HP layar sempit) */}
       <div className="max-w-3xl mx-auto flex flex-wrap gap-2 md:gap-4">
         <button disabled={currentIndex===0} onClick={() => setCurrentIndex(currentIndex-1)} className="flex-1 min-w-[120px] p-4 bg-white border border-gray-200 text-slate-600 rounded-2xl font-bold disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"><ChevronLeft size={20}/> KEMBALI</button>
         <button disabled={currentIndex===questions.length-1} onClick={() => setCurrentIndex(currentIndex+1)} className="flex-1 min-w-[120px] p-4 bg-emerald-600 text-white rounded-2xl font-bold disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">LANJUT <ChevronRight size={20}/></button>
