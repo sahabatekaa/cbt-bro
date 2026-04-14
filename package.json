@@ -10,14 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "firebase": "^12.10.0",
-    "framer-motion": "^12.35.0",
-    "lucide-react": "^0.577.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-router-dom": "^7.13.1",
-    "xlsx": "^0.18.5"
-  },
+    "firebase": "^10.0.0",
+    "lucide-react": "^0.300.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "xlsx": "^0.18.5",
+    "katex": "^0.16.9",
+    "react-latex-next": "^2.2.0"
+  }
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/react": "^19.2.7",
