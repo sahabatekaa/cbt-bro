@@ -15,6 +15,7 @@ export default function App() {
   const [logoClicks, setLogoClicks] = useState(0);
   const [activeSessions, setActiveSessions] = useState([]);
   const [isRegistering, setIsRegistering] = useState(false);
+  
   const getSafeData = () => { try { return JSON.parse(localStorage.getItem('studentData')) || null; } catch (e) { localStorage.removeItem('studentData'); return null; } };
   const [studentData, setStudentData] = useState(getSafeData());
 
@@ -79,51 +80,62 @@ export default function App() {
 
   return (
     <div className={darkMode ? 'dark' : ''}>
-      <div className="min-h-screen bg-slate-950 transition-colors">
-        <button onClick={() => setDarkMode(!darkMode)} className="fixed top-4 right-4 z-50 p-2.5 rounded-full bg-white shadow-md"><Moon size={20} /></button>
+      {/* Warna Background yang sudah diperbaiki untuk merespon Dark Mode */}
+      <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
+        
+        {/* Tombol Dark Mode yang bisa berubah icon */}
+        <button onClick={() => setDarkMode(!darkMode)} className="fixed top-4 right-4 z-50 p-2.5 rounded-full bg-white dark:bg-slate-800 text-slate-600 dark:text-yellow-400 shadow-md border border-gray-100 dark:border-slate-700">
+          {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
+
         {currentView === 'login' && (
           <div className="flex items-center justify-center min-h-screen p-4">
-            <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-xl">
+            <div className="w-full max-w-md bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-xl border border-gray-100 dark:border-slate-700">
               <div className="flex flex-col items-center mb-8">
-                <div onClick={() => { setLogoClicks(c => c + 1); if (logoClicks + 1 >= 5) { setCurrentView('admin-login'); setLogoClicks(0); } }} className="bg-emerald-500 p-4 rounded-2xl text-white mb-4"><GraduationCap size={40} /></div>
-                <h1 className="text-2xl font-black text-slate-800">CBT BRO</h1>
+                <div onClick={() => { setLogoClicks(c => c + 1); if (logoClicks + 1 >= 5) { setCurrentView('admin-login'); setLogoClicks(0); } }} className="bg-emerald-500 p-4 rounded-2xl text-white mb-4 cursor-pointer shadow-lg shadow-emerald-500/30"><GraduationCap size={40} /></div>
+                <h1 className="text-2xl font-black text-slate-800 dark:text-white">CBT BRO</h1>
+                <p className="text-emerald-600 dark:text-emerald-400 font-medium text-sm mt-1">Portal Ujian Siswa</p>
               </div>
               <form onSubmit={handleStudentStart} className="space-y-4">
-                <div className="relative"><User className="absolute left-4 top-3.5 text-gray-400" size={20} /><input name="studentName" required placeholder="Nama Lengkap" className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border rounded-xl" /></div>
+                <div className="relative"><User className="absolute left-4 top-3.5 text-gray-400" size={20} /><input name="studentName" required placeholder="Nama Lengkap" className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400" /></div>
+                
                 <div className="flex gap-2">
-                  <div className="relative flex-1"><LayoutGrid className="absolute left-4 top-3.5 text-gray-400" size={20} /><select name="studentClass" required className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border rounded-xl appearance-none"><option value="">Tingkat...</option>{availableClasses.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                  <div className="relative w-1/3"><Users className="absolute left-3 top-3.5 text-gray-400" size={20} /><input name="studentSubClass" required placeholder="Sub (A)" className="w-full pl-10 pr-3 py-3.5 bg-gray-50 border rounded-xl uppercase font-bold text-center" /></div>
+                  <div className="relative flex-1"><LayoutGrid className="absolute left-4 top-3.5 text-gray-400" size={20} /><select name="studentClass" required className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 appearance-none"><option value="">Tingkat...</option>{availableClasses.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                  <div className="relative w-1/3"><Users className="absolute left-3 top-3.5 text-gray-400" size={20} /><input name="studentSubClass" required placeholder="Sub (A)" className="w-full pl-10 pr-3 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 uppercase font-bold text-center" /></div>
                 </div>
-                <div className="relative"><Key className="absolute left-4 top-3.5 text-gray-400" size={20} /><input name="token" required placeholder="Token" className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border rounded-xl font-mono uppercase" /></div>
-                <button type="submit" className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl">MULAI</button>
+
+                <div className="relative"><Key className="absolute left-4 top-3.5 text-gray-400" size={20} /><input name="token" required placeholder="Token" className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 font-mono uppercase tracking-widest" /></div>
+                <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl mt-2 active:scale-95 transition-transform shadow-lg shadow-emerald-500/30">MULAI UJIAN</button>
               </form>
             </div>
           </div>
         )}
+
         {currentView === 'admin-login' && (
-          <div className="flex items-center justify-center min-h-screen p-4">
+          <div className="flex items-center justify-center min-h-screen p-4 bg-slate-950">
             <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-xl">
-              <h1 className="text-2xl font-black mb-6 text-slate-800">Akses Guru</h1>
+              <h1 className="text-2xl font-black mb-6 text-slate-800 flex items-center gap-2"><Lock className="text-emerald-500"/> Akses Guru</h1>
               {!isRegistering ? (
                 <form onSubmit={handleAdminLogin} className="space-y-4">
-                  <input name="email" type="email" placeholder="Email" required className="w-full p-3.5 bg-gray-50 border rounded-xl" />
-                  <input name="password" type="password" placeholder="Password" required className="w-full p-3.5 bg-gray-50 border rounded-xl" />
-                  <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold">LOGIN</button>
-                  <button type="button" onClick={() => setIsRegistering(true)} className="w-full text-emerald-600 font-bold text-sm">Daftar Guru Baru</button>
-                  <button type="button" onClick={() => setCurrentView('login')} className="w-full text-gray-500 font-medium text-sm">Batal</button>
+                  <input name="email" type="email" placeholder="Email Guru" required className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
+                  <input name="password" type="password" placeholder="Password" required className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
+                  <button type="submit" className="w-full bg-slate-900 hover:bg-black text-white py-4 rounded-xl font-bold mt-2 transition-all active:scale-95">LOGIN SISTEM</button>
+                  <button type="button" onClick={() => setIsRegistering(true)} className="w-full text-emerald-600 font-bold text-sm pt-2">Belum punya akun? Daftar Guru Baru</button>
+                  <button type="button" onClick={() => setCurrentView('login')} className="w-full text-gray-500 font-medium text-sm">Batal, Kembali ke Siswa</button>
                 </form>
               ) : (
                 <form onSubmit={handleAdminRegister} className="space-y-4">
-                  <input name="name" type="text" placeholder="Nama & Gelar" required className="w-full p-3.5 bg-gray-50 border rounded-xl" />
-                  <input name="email" type="email" placeholder="Email Baru" required className="w-full p-3.5 bg-gray-50 border rounded-xl" />
-                  <input name="password" type="password" placeholder="Password" required className="w-full p-3.5 bg-gray-50 border rounded-xl" />
-                  <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold">DAFTAR</button>
-                  <button type="button" onClick={() => setIsRegistering(false)} className="w-full text-gray-500 font-medium text-sm">Batal</button>
+                  <input name="name" type="text" placeholder="Nama Lengkap & Gelar" required className="w-full p-3.5 bg-gray-50 border border-emerald-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
+                  <input name="email" type="email" placeholder="Email Baru" required className="w-full p-3.5 bg-gray-50 border border-emerald-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
+                  <input name="password" type="password" placeholder="Buat Password" required className="w-full p-3.5 bg-gray-50 border border-emerald-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
+                  <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold mt-2 transition-all active:scale-95 shadow-lg shadow-emerald-500/30">DAFTARKAN AKUN</button>
+                  <button type="button" onClick={() => setIsRegistering(false)} className="w-full text-gray-500 font-medium text-sm pt-2">Batal, kembali login</button>
                 </form>
               )}
             </div>
           </div>
         )}
+
         {currentView === 'exam' && <ExamRoom studentData={studentData} onFinish={(score) => { setExamScore(score); setCurrentView('result'); }} />}
         {currentView === 'result' && <ResultPage score={examScore} studentData={studentData} onLogout={logout} />}
         {currentView === 'teacher' && <TeacherDashboard onLogout={logout} />}
