@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { ref, onValue, update, push } from 'firebase/database';
-import { Timer, AlertTriangle, Book } from 'lucide-react';
+import { Timer, AlertTriangle, Book, ChevronLeft, ChevronRight } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
 
@@ -43,25 +43,39 @@ export default function ExamRoom({ studentData, onFinish }) {
     onFinish(score);
   };
 
-  if (isLocked) return <div className="h-screen flex items-center justify-center bg-red-50 text-red-700 font-bold text-2xl">UJIAN TERKUNCI!</div>;
-  if (questions.length === 0) return <div className="h-screen flex flex-col items-center justify-center p-4 text-center"><Book size={48}/><h1 className="text-xl font-bold mt-4">Soal Belum Tersedia</h1></div>;
+  if (isLocked) return <div className="h-screen flex items-center justify-center bg-red-50 text-red-700 font-bold text-2xl p-4 text-center">UJIAN TERKUNCI!<br/><span className="text-sm mt-2 font-normal">Anda terlalu sering pindah tab.</span></div>;
+  if (questions.length === 0) return <div className="h-screen flex flex-col items-center justify-center p-6 text-center text-gray-500"><Book size={60} className="mb-4 opacity-50"/><h1 className="text-xl font-bold text-slate-700">Soal Belum Tersedia</h1><p className="text-sm mt-2">Menunggu guru mengunggah soal untuk Tingkat {studentData.class}</p></div>;
 
   const q = questions[currentIndex];
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 font-sans">
-      <div className="max-w-3xl mx-auto flex justify-between bg-white p-4 rounded-xl shadow-sm mb-4"><span className="font-bold">{studentData.name} ({studentData.class}-{studentData.subKelas})</span><span className="font-bold text-red-500">{Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}</span></div>
-      <div className="max-w-3xl mx-auto bg-white p-6 rounded-xl shadow-sm mb-4">
-        <span className="text-xs font-bold bg-emerald-100 px-2 py-1 rounded">No. {currentIndex+1}</span>
-        <p className="text-lg font-bold my-4"><Latex>{q.pertanyaan}</Latex></p>
-        <div className="space-y-2">{['A','B','C','D'].map(opt => (
-          <button key={opt} onClick={() => handleSelect(q.id, opt)} className={`w-full text-left p-3 rounded-lg border ${answers[q.id]===opt ? 'bg-emerald-50 border-emerald-500 font-bold':'bg-gray-50'}`}><Latex>{`${opt}. ${q[`opsi${opt}`]}`}</Latex></button>
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6 font-sans pb-24">
+      {/* HEADER RESPONSIVE */}
+      <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-between items-center bg-white p-4 rounded-2xl shadow-sm mb-4 gap-3 border border-gray-100">
+        <div className="text-center sm:text-left">
+          <p className="font-bold text-slate-800 text-lg">{studentData.name}</p>
+          <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full mt-1 inline-block">{studentData.class}-{studentData.subKelas} • {studentData.mapel}</span>
+        </div>
+        <div className="flex items-center gap-2 bg-orange-50 border border-orange-100 px-4 py-2.5 rounded-xl text-orange-600 font-mono font-black text-lg w-full sm:w-auto justify-center"><Timer size={20} />{Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}</div>
+      </div>
+
+      <div className="max-w-3xl mx-auto bg-white p-5 md:p-8 rounded-3xl shadow-sm mb-6 border border-gray-100">
+        <span className="text-xs font-bold bg-emerald-500 text-white px-3 py-1.5 rounded-lg shadow-md">Soal No. {currentIndex+1} / {questions.length}</span>
+        <p className="text-lg md:text-xl font-semibold my-6 text-slate-800 leading-relaxed"><Latex>{q.pertanyaan}</Latex></p>
+        
+        <div className="space-y-3">{['A','B','C','D'].map(opt => (
+          <button key={opt} onClick={() => handleSelect(q.id, opt)} className={`w-full text-left p-4 rounded-2xl border-2 transition-all flex items-center gap-4 ${answers[q.id]===opt ? 'bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-500/10 text-emerald-900 font-bold':'bg-gray-50 border-gray-100 hover:border-emerald-200'}`}>
+            <span className={`w-8 h-8 flex items-center justify-center rounded-lg font-black ${answers[q.id]===opt?'bg-emerald-500 text-white':'bg-white text-gray-400 border border-gray-200'}`}>{opt}</span>
+            <span className="flex-1"><Latex>{q[`opsi${opt}`]}</Latex></span>
+          </button>
         ))}</div>
       </div>
-      <div className="max-w-3xl mx-auto flex gap-2">
-        <button disabled={currentIndex===0} onClick={() => setCurrentIndex(currentIndex-1)} className="flex-1 p-3 bg-gray-200 rounded-lg font-bold disabled:opacity-50">KEMBALI</button>
-        <button disabled={currentIndex===questions.length-1} onClick={() => setCurrentIndex(currentIndex+1)} className="flex-1 p-3 bg-blue-100 text-blue-700 rounded-lg font-bold disabled:opacity-50">LANJUT</button>
-        <button onClick={() => window.confirm("Yakin kumpul?") && submitExam()} className="flex-1 p-3 bg-emerald-600 text-white rounded-lg font-bold">KUMPUL</button>
+
+      {/* TOMBOL NAVIGASI RESPONSIVE (Membungkus ke bawah kalau HP layar sempit) */}
+      <div className="max-w-3xl mx-auto flex flex-wrap gap-2 md:gap-4">
+        <button disabled={currentIndex===0} onClick={() => setCurrentIndex(currentIndex-1)} className="flex-1 min-w-[120px] p-4 bg-white border border-gray-200 text-slate-600 rounded-2xl font-bold disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"><ChevronLeft size={20}/> KEMBALI</button>
+        <button disabled={currentIndex===questions.length-1} onClick={() => setCurrentIndex(currentIndex+1)} className="flex-1 min-w-[120px] p-4 bg-emerald-600 text-white rounded-2xl font-bold disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">LANJUT <ChevronRight size={20}/></button>
+        <button onClick={() => window.confirm("Yakin kumpul?") && submitExam()} className="w-full sm:w-auto p-4 bg-slate-900 text-white rounded-2xl font-black flex-1 sm:flex-none sm:px-8 mt-2 sm:mt-0 shadow-xl active:scale-95">KUMPUL</button>
       </div>
     </div>
   );
