@@ -1,7 +1,7 @@
 // src/firebase.js
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
 import { getDatabase } from "firebase/database";
+import { getAuth } from "firebase/auth";
 
 // GANTI DENGAN KONFIGURASI FIREBASE ANDA
 const firebaseConfig = {
@@ -14,6 +14,7 @@ const firebaseConfig = {
   appId: "1:719826370448:web:ee28abf7410851d2b87d15"
 };
 
+
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
 export const db = getDatabase(app);
+export const auth = getAuth(app);
