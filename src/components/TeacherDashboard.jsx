@@ -4,7 +4,8 @@ import { ref as dbRef, onValue, push, remove, update } from 'firebase/database';
 import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
-import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit } from 'lucide-react';
+// BUG FIX: Ikon 'Activity' sudah ditambahkan di bawah ini 👇
+import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity } from 'lucide-react';
 
 export default function TeacherDashboard({ onLogout }) {
   // ANTI REFRESH TAB
@@ -188,7 +189,7 @@ export default function TeacherDashboard({ onLogout }) {
                     <div className="col-span-2 md:col-span-1 bg-white p-5 rounded-3xl border-l-4 border-l-red-500 shadow-sm"><p className="text-slate-500 text-xs font-bold mb-1 uppercase">Curang</p><p className="text-4xl font-black text-red-600">{monitoredStudents.filter(s => s.warnings > 0).length}</p></div>
                   </div>
                   
-                  {/* DAFTAR SISWA (MENGGUNAKAN KARTU, BUKAN TABEL) */}
+                  {/* DAFTAR SISWA */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
                     {monitoredStudents.map(s => (
                       <div key={s.id} className="bg-white p-5 rounded-3xl border shadow-sm flex flex-col gap-4 hover:border-emerald-300 transition-colors">
