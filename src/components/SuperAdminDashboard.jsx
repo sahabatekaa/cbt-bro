@@ -38,26 +38,31 @@ export default function SuperAdminDashboard({ onLogout }) {
     fetchData('exam_sessions', 'sessions');
   }, []);
 
-  // LOGIKA SAPU BERSIH: Ambil semua user yang BUKAN admin dan BUKAN pending
-  const pendingTeachers = data.users.filter(u => u.status === 'pending' && u.email !== 'admin@sekolah.com');
-  const activeTeachers = data.users.filter(u => u.status !== 'pending' && u.email !== 'admin@sekolah.com');
+  // AMAN DARI BOLONG: Ambil user dengan filter yang aman
+  const pendingTeachers = data.users.filter(u => u?.status === 'pending' && u?.email !== 'admin@sekolah.com');
+  const activeTeachers = data.users.filter(u => u?.status !== 'pending' && u?.email !== 'admin@sekolah.com');
   
-  const activeSessions = data.sessions.filter(s => s.status === 'open');
+  const activeSessions = data.sessions.filter(s => s?.status === 'open');
   const stats = {
-    online: data.live.filter(s => s.status !== 'Selesai').length,
-    selesai: data.live.filter(s => s.status === 'Selesai').length,
-    curang: data.live.filter(s => s.warnings >= 3).length
+    online: data.live.filter(s => s?.status !== 'Selesai').length,
+    selesai: data.live.filter(s => s?.status === 'Selesai').length,
+    curang: data.live.filter(s => (s?.warnings || 0) >= 3).length
   };
 
-  const availableGuruSoal = [...new Set(data.bank.map(q => q.teacherEmail).filter(Boolean))];
-  const availableMapelSoal = [...new Set(data.bank.map(q => q.mapel).filter(Boolean))];
-  const filteredSoal = data.bank.filter(q => (filterGuru === '' || q.teacherEmail === filterGuru) && (filterMapel === '' || q.mapel === filterMapel));
+  const availableGuruSoal = [...new Set(data.bank.map(q => q?.teacherEmail).filter(Boolean))];
+  const availableMapelSoal = [...new Set(data.bank.map(q => q?.mapel).filter(Boolean))];
+  const filteredSoal = data.bank.filter(q => (filterGuru === '' || q?.teacherEmail === filterGuru) && (filterMapel === '' || q?.mapel === filterMapel));
 
   const approveTeacher = (id) => update(ref(db, `users/${id}`), { status: 'active' });
   const rejectTeacher = (id) => { if(window.confirm("Tolak & Hapus pendaftar ini?")) remove(ref(db, `users/${id}`)); };
   const deleteTeacher = (id) => { if(window.confirm("PERINGATAN OTORITAS!\nHapus akun guru ini secara permanen dari server pusat?")) remove(ref(db, `users/${id}`)); };
 
-  const openEditGuruModal = (teacher) => { setEditGuruId(teacher.id); setGuruFormData({ name: teacher.name, email: teacher.email }); setShowGuruModal(true); };
+  // AMAN DARI BOLONG: Beri nilai default jika kosong
+  const openEditGuruModal = (teacher) => { 
+    setEditGuruId(teacher.id); 
+    setGuruFormData({ name: teacher?.name || '', email: teacher?.email || '' }); 
+    setShowGuruModal(true); 
+  };
   const handleUpdateGuru = (e) => { e.preventDefault(); update(ref(db, `users/${editGuruId}`), { name: guruFormData.name, email: guruFormData.email }); alert("Data Guru Diperbarui!"); setShowGuruModal(false); };
 
   const handleManualAddGuru = (e) => {
@@ -70,7 +75,7 @@ export default function SuperAdminDashboard({ onLogout }) {
   const forceCloseSession = (id) => { if(window.confirm("KUNCI PAKSA sesi ini?")) update(ref(db, `exam_sessions/${id}`), { status: 'closed' }); };
   const deleteSoalGlobal = (id) => { if(window.confirm("Hapus soal ini dari PUSAT?")) remove(ref(db, `bank_soal/${id}`)); };
 
-  const openEditSoalModal = (q) => { setSoalFormData({ mapel: q.mapel||'', kelas: q.kelas||'', pertanyaan: q.pertanyaan||'', opsiA: q.opsiA||'', opsiB: q.opsiB||'', opsiC: q.opsiC||'', opsiD: q.opsiD||'', kunci: q.kunci||'A' }); setEditSoalId(q.id); setShowSoalModal(true); };
+  const openEditSoalModal = (q) => { setSoalFormData({ mapel: q?.mapel||'', kelas: q?.kelas||'', pertanyaan: q?.pertanyaan||'', opsiA: q?.opsiA||'', opsiB: q?.opsiB||'', opsiC: q?.opsiC||'', opsiD: q?.opsiD||'', kunci: q?.kunci||'A' }); setEditSoalId(q.id); setShowSoalModal(true); };
   const handleUpdateSoal = (e) => { e.preventDefault(); update(ref(db, `bank_soal/${editSoalId}`), { ...soalFormData }); alert("Soal berhasil dimodifikasi oleh Admin!"); setShowSoalModal(false); };
 
   const NavItem = ({ tab, icon: Icon, label, badge }) => (
@@ -84,7 +89,6 @@ export default function SuperAdminDashboard({ onLogout }) {
     <div className="flex h-screen bg-slate-950 overflow-hidden font-sans text-slate-200">
       {isMobileMenuOpen && <div className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />}
       
-      {/* SIDEBAR - PITCH BLACK */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-black border-r border-slate-800 flex flex-col transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 shadow-2xl`}>
         <div className="p-6 border-b border-slate-800 flex justify-between items-center"><h1 className="text-2xl font-black text-white flex gap-2 items-center tracking-widest"><Crown className="text-amber-500" size={28}/> PUSAT</h1><button className="md:hidden text-slate-500" onClick={() => setIsMobileMenuOpen(false)}><X size={24}/></button></div>
         <div className="p-6 border-b border-slate-800 bg-gradient-to-r from-slate-900 to-black">
@@ -100,7 +104,6 @@ export default function SuperAdminDashboard({ onLogout }) {
       </aside>
       
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-[#0a0f1c]">
-        {/* HEADER - SLATE 900 */}
         <header className="bg-slate-900 border-b border-slate-800 p-4 lg:p-6 flex justify-between items-center shadow-lg z-10">
           <div className="flex items-center gap-4">
             <button className="md:hidden p-2 bg-slate-800 rounded-lg text-amber-500" onClick={() => setIsMobileMenuOpen(true)}><Menu size={24}/></button>
@@ -132,11 +135,11 @@ export default function SuperAdminDashboard({ onLogout }) {
                     {activeSessions.map(s => (
                       <div key={s.id} className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-lg flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:border-amber-500/30 transition-colors">
                         <div>
-                          <p className="font-black font-mono text-2xl text-amber-400 mb-1">{s.token}</p>
-                          <p className="font-bold text-slate-400 text-sm">{s.teacherEmail}</p>
+                          <p className="font-black font-mono text-2xl text-amber-400 mb-1">{s?.token}</p>
+                          <p className="font-bold text-slate-400 text-sm">{s?.teacherEmail}</p>
                           <div className="flex flex-wrap gap-2 mt-3">
-                            <span className="text-xs font-black text-slate-900 bg-amber-500 px-3 py-1 rounded-md">{s.mapel}</span>
-                            <span className="text-xs font-bold text-slate-300 bg-slate-800 px-3 py-1 rounded-md border border-slate-700">Tingkat {s.kelas}-{s.subKelas}</span>
+                            <span className="text-xs font-black text-slate-900 bg-amber-500 px-3 py-1 rounded-md">{s?.mapel}</span>
+                            <span className="text-xs font-bold text-slate-300 bg-slate-800 px-3 py-1 rounded-md border border-slate-700">Tingkat {s?.kelas}-{s?.subKelas}</span>
                           </div>
                         </div>
                         <button onClick={() => forceCloseSession(s.id)} className="w-full sm:w-auto bg-red-950/50 text-red-500 hover:bg-red-600 hover:text-white px-5 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 border border-red-900/50 shadow-md transition-all active:scale-95"><Lock size={18}/> Kunci Paksa</button>
@@ -162,13 +165,13 @@ export default function SuperAdminDashboard({ onLogout }) {
                   <div key={q.id} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-lg flex flex-col md:flex-row gap-6 justify-between hover:border-amber-500/30 transition-colors">
                     <div className="flex-1">
                       <div className="flex flex-wrap gap-2 mb-4 border-b border-slate-800 pb-4">
-                        <span className="text-xs font-black bg-amber-500 text-black px-3 py-1.5 rounded-md">{q.teacherEmail}</span>
-                        <span className="text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-md">{q.mapel} (Tk. {q.kelas})</span>
+                        <span className="text-xs font-black bg-amber-500 text-black px-3 py-1.5 rounded-md">{q?.teacherEmail}</span>
+                        <span className="text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-md">{q?.mapel} (Tk. {q?.kelas})</span>
                       </div>
                       <p className="font-bold text-lg mb-6 text-white leading-relaxed"><Latex>{`${i+1}. ${q?.pertanyaan || ''}`}</Latex></p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-400 font-medium">
                         {['A','B','C','D'].map(opt => (
-                          <div key={opt} className={`p-4 rounded-xl border ${q.kunci===opt?'bg-amber-500/10 border-amber-500/50 text-amber-400 font-bold':'border-slate-800 bg-slate-950'}`}><Latex>{`${opt}. ${q[`opsi${opt}`]}`}</Latex></div>
+                          <div key={opt} className={`p-4 rounded-xl border ${q?.kunci===opt?'bg-amber-500/10 border-amber-500/50 text-amber-400 font-bold':'border-slate-800 bg-slate-950'}`}><Latex>{`${opt}. ${q[`opsi${opt}`]}`}</Latex></div>
                         ))}
                       </div>
                     </div>
@@ -183,7 +186,7 @@ export default function SuperAdminDashboard({ onLogout }) {
             </div>
           )}
 
-          {/* TAB MANAJEMEN GURU */}
+          {/* TAB MANAJEMEN GURU (ANTI CRASH) */}
           {activeTab === 'guru' && (
             <div className="space-y-8 max-w-6xl mx-auto">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -197,7 +200,7 @@ export default function SuperAdminDashboard({ onLogout }) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {pendingTeachers.map(t => (
                       <div key={t.id} className="bg-slate-950 p-5 rounded-2xl border border-orange-900/30 flex flex-col sm:flex-row justify-between sm:items-center gap-4 shadow-sm">
-                        <div><p className="font-black text-white text-lg">{t.name}</p><p className="font-medium text-slate-400 text-sm mt-1">{t.email}</p></div>
+                        <div><p className="font-black text-white text-lg">{t?.name || 'Tanpa Nama'}</p><p className="font-medium text-slate-400 text-sm mt-1">{t?.email || '-'}</p></div>
                         <div className="flex gap-2 w-full sm:w-auto border-t border-slate-800 sm:border-t-0 pt-4 sm:pt-0">
                           <button onClick={() => approveTeacher(t.id)} className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-3 rounded-xl text-sm font-bold shadow-md active:scale-95 transition-all"><CheckCircle size={18} className="mx-auto"/></button>
                           <button onClick={() => rejectTeacher(t.id)} className="flex-1 sm:flex-none bg-slate-900 border border-red-900/50 text-red-500 hover:bg-red-950 px-5 py-3 rounded-xl text-sm font-bold shadow-md active:scale-95 transition-all"><XCircle size={18} className="mx-auto"/></button>
@@ -217,10 +220,14 @@ export default function SuperAdminDashboard({ onLogout }) {
                     {activeTeachers.map(t => (
                       <div key={t.id} className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-lg flex flex-col justify-between hover:border-amber-500/30 transition-colors">
                         <div className="flex items-center gap-4 mb-5 border-b border-slate-800/50 pb-4">
-                          <div className="w-14 h-14 shrink-0 bg-slate-800 text-amber-500 rounded-full flex items-center justify-center font-black text-2xl uppercase border border-slate-700 shadow-inner">{t.name.charAt(0)}</div>
+                          {/* ANTI-CRASH ICON GENERATOR */}
+                          <div className="w-14 h-14 shrink-0 bg-slate-800 text-amber-500 rounded-full flex items-center justify-center font-black text-2xl uppercase border border-slate-700 shadow-inner">
+                            {t?.name ? t.name.charAt(0) : 'G'}
+                          </div>
                           <div className="min-w-0">
-                            <p className="font-black text-white text-lg truncate">{t.name}</p>
-                            <p className="font-medium text-slate-400 text-sm truncate">{t.email}</p>
+                            {/* ANTI-CRASH TEXT */}
+                            <p className="font-black text-white text-lg truncate">{t?.name || 'Guru Tanpa Nama'}</p>
+                            <p className="font-medium text-slate-400 text-sm truncate">{t?.email || 'Email tidak tersedia'}</p>
                           </div>
                         </div>
                         <div className="flex gap-2">
