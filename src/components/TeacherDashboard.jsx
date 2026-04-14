@@ -26,28 +26,16 @@ export default function TeacherDashboard({ onLogout }) {
         setTeacherProfile(snap.exists() && snap.val()?.name ? snap.val() : { name: currentUserEmail.split('@')[0], email: currentUserEmail }); 
       });
     }
-    
-    // Penarikan Data Kebal Error
     const fetchData = (path, key) => onValue(dbRef(db, path), snap => {
       const val = snap.val();
-      if (val && typeof val === 'object') {
-        setData(prev => ({ ...prev, [key]: Object.keys(val).map(k => ({ id: k, ...val[k] })) }));
-      } else {
-        setData(prev => ({ ...prev, [key]: [] }));
-      }
+      if (val && typeof val === 'object') setData(prev => ({ ...prev, [key]: Object.keys(val).map(k => ({ id: k, ...val[k] })) }));
+      else setData(prev => ({ ...prev, [key]: [] }));
     });
-
-    fetchData('live_students', 'live'); 
-    fetchData('bank_soal', 'bank'); 
-    fetchData('leaderboard', 'lead'); 
-    fetchData('exam_sessions', 'sessions');
+    fetchData('live_students', 'live'); fetchData('bank_soal', 'bank'); fetchData('leaderboard', 'lead'); fetchData('exam_sessions', 'sessions');
   }, [currentUserEmail]);
 
-  // Filter dengan Safety Check (s?) agar tidak crash jika data bolong
   const myQuestions = (data.bank || []).filter(q => q?.teacherEmail === currentUserEmail);
   const mySessions = (data.sessions || []).filter(s => s?.teacherEmail === currentUserEmail);
-  
-  // Pastikan score yang di-sort adalah angka
   const myLeaderboard = (data.lead || []).filter(s => s?.teacherEmail === currentUserEmail).sort((a,b) => (Number(b?.score) || 0) - (Number(a?.score) || 0));
   const monitoredStudents = (data.live || []).filter(s => s?.token === activeMonitorToken);
 
@@ -65,48 +53,46 @@ export default function TeacherDashboard({ onLogout }) {
   const delSession = (id) => { if(window.confirm("Hapus?")) remove(dbRef(db, `exam_sessions/${id}`)); };
   const setMonitor = (t) => { setActiveMonitorToken(t); localStorage.setItem('activeMonitorToken', t); setActiveTab('proctor'); };
 
-  const NavItem = ({ tab, icon: Icon, label }) => (<button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-3.5 rounded-xl ${activeTab === tab ? 'bg-emerald-500 text-white' : 'text-slate-600 hover:bg-emerald-50'}`}><Icon size={20}/> <span className="font-semibold">{label}</span></button>);
+  const NavItem = ({ tab, icon: Icon, label }) => (<button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-3.5 rounded-xl transition-all ${activeTab === tab ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-600 hover:bg-emerald-50'}`}><Icon size={20}/> <span className="font-semibold">{label}</span></button>);
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden font-sans">
-      <style>{`@media print { body { background: white !important; } aside, header, button, .print\\:hidden, select, input { display: none !important; } main { padding: 0 !important; width: 100% !important; } table { width: 100% !important; border-collapse: collapse; } th, td { border: 1px solid #000 !important; padding: 10px !important; } }`}</style>
+      <style>{`@media print { @page { margin: 1cm; } body { background: white !important; } aside, header, button, select, input, .print\\:hidden { display: none !important; } main { padding: 0 !important; width: 100% !important; overflow: visible !important; } table { width: 100% !important; border-collapse: collapse; margin-top: 20px; } th, td { border: 1px solid #000 !important; padding: 10px !important; color: black !important; font-size: 14px; } th { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; } .shadow-sm, .rounded-xl { box-shadow: none !important; border: none !important; } }`}</style>
       
       {isMobileMenuOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden print:hidden" onClick={() => setIsMobileMenuOpen(false)} />}
       
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r flex flex-col transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 print:hidden`}>
-        <div className="p-6 border-b"><h1 className="text-xl font-black text-emerald-600 flex gap-2"><GraduationCap size={26}/> CBT BRO</h1></div>
+        <div className="p-6 border-b flex justify-between items-center"><h1 className="text-xl font-black text-emerald-600 flex gap-2"><GraduationCap size={26}/> CBT BRO</h1><button className="md:hidden text-gray-400" onClick={() => setIsMobileMenuOpen(false)}><X size={24}/></button></div>
         <div className="p-4 border-b"><p className="text-xs font-bold text-emerald-500 uppercase mb-1">Guru</p><p className="text-sm font-bold truncate uppercase">{teacherProfile?.name}</p></div>
-        <nav className="flex-1 p-4 space-y-2">
-          <NavItem tab="settings" icon={Settings} label="Sesi Ujian" />
-          <NavItem tab="proctor" icon={Users} label="Monitor Live" />
-          <NavItem tab="bank" icon={BookOpen} label="Soal Milikku" />
-          <NavItem tab="recap" icon={BarChart} label="Rekap Nilai" />
-        </nav>
+        <nav className="flex-1 p-4 space-y-2"><NavItem tab="settings" icon={Settings} label="Sesi Ujian" /><NavItem tab="proctor" icon={Users} label="Monitor Live" /><NavItem tab="bank" icon={BookOpen} label="Soal Milikku" /><NavItem tab="recap" icon={BarChart} label="Rekap Nilai" /></nav>
         <div className="p-4 border-t"><button onClick={onLogout} className="w-full flex gap-3 p-3 text-red-600 font-bold"><LogOut size={20}/> Logout</button></div>
       </aside>
       
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="bg-white border-b p-4 flex justify-between print:hidden">
-          <button className="md:hidden" onClick={() => setIsMobileMenuOpen(true)}><Menu/></button>
-          <h2 className="text-xl font-bold">Dasbor</h2>
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+        <header className="bg-white border-b p-4 flex justify-between items-center print:hidden pr-16 md:pr-4">
+          <div className="flex items-center gap-3">
+            <button className="md:hidden p-2 bg-gray-100 rounded-lg text-gray-600" onClick={() => setIsMobileMenuOpen(true)}><Menu size={24}/></button>
+            <h2 className="text-xl font-bold text-slate-800">Dasbor Guru</h2>
+          </div>
+          <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-black uppercase">{teacherProfile?.name?.charAt(0) || 'G'}</div>
         </header>
         
         <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50">
           
           {activeTab === 'settings' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border h-fit"><h3 className="font-bold mb-4">Buka Sesi</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="bg-white p-5 md:p-6 rounded-2xl shadow-sm border h-fit"><h3 className="font-bold mb-4 flex items-center gap-2"><Plus className="text-emerald-500"/> Buka Sesi</h3>
                 <form onSubmit={handleCreateSession} className="space-y-4">
-                  <select value={selectedMapelSesi} onChange={(e) => setSelectedMapelSesi(e.target.value)} required className="w-full p-3 border rounded-xl"><option value="">Mapel...</option>{availableMapel.map(m => <option key={m}>{m}</option>)}</select>
-                  <div className="flex gap-2"><select id="kelas_session" required disabled={!selectedMapelSesi} className="w-full p-3 border rounded-xl"><option value="">Tingkat...</option>{availableKelasSesi.map(k => <option key={k}>{k}</option>)}</select><input id="subkelas_session" placeholder="Sub (A)" required className="w-full p-3 border rounded-xl uppercase" /></div>
-                  <div className="flex gap-2"><input id="token_input" required placeholder="Token" className="w-full p-3 border rounded-xl uppercase" /><button type="button" onClick={() => document.getElementById('token_input').value = Math.random().toString(36).substring(2,7).toUpperCase()} className="p-3 bg-emerald-100 rounded-xl"><Dices/></button></div>
-                  <button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold">Rilis</button>
+                  <select value={selectedMapelSesi} onChange={(e) => setSelectedMapelSesi(e.target.value)} required className="w-full p-3 border rounded-xl outline-none"><option value="">Mapel...</option>{availableMapel.map(m => <option key={m}>{m}</option>)}</select>
+                  <div className="flex gap-2"><select id="kelas_session" required disabled={!selectedMapelSesi} className="w-full p-3 border rounded-xl outline-none"><option value="">Tingkat...</option>{availableKelasSesi.map(k => <option key={k}>{k}</option>)}</select><input id="subkelas_session" placeholder="Sub (A)" required className="w-full p-3 border rounded-xl uppercase font-bold text-center" /></div>
+                  <div className="flex gap-2"><input id="token_input" required placeholder="Token" className="w-full p-3 border rounded-xl uppercase font-mono font-bold" /><button type="button" onClick={() => document.getElementById('token_input').value = Math.random().toString(36).substring(2,7).toUpperCase()} className="p-3 bg-emerald-100 text-emerald-700 rounded-xl"><Dices/></button></div>
+                  <button type="submit" className="w-full bg-emerald-600 text-white py-3.5 rounded-xl font-bold shadow-md">Rilis Sesi</button>
                 </form>
               </div>
-              <div className="lg:col-span-2 space-y-4"><h3 className="font-bold">Sesi Aktif</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{mySessions.map((s) => (
-                    <div key={s.id} className={`p-4 rounded-2xl border ${s.status==='open'?'bg-white':'bg-gray-100'}`}><h4 className="text-2xl font-black">{s.token}</h4><p className="text-xs font-bold mt-1">{s.mapel} | Kls: {s.kelas} | Sub: {s.subKelas}</p>
-                    <div className="flex gap-2 mt-4"><button onClick={() => setMonitor(s.token)} className="flex-1 bg-slate-800 text-white py-2 rounded-lg text-sm">Monitor</button><button onClick={() => toggleSession(s.id, s.status)} className="p-2 bg-gray-200 rounded-lg">{s.status==='open'?<Lock size={16}/>:<Unlock size={16}/>}</button><button onClick={() => delSession(s.id)} className="p-2 bg-red-100 text-red-600 rounded-lg"><Trash2 size={16}/></button></div></div>
+              <div className="lg:col-span-2 space-y-4"><h3 className="font-bold">Sesi Ujian Aktif</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{mySessions.map((s) => (
+                    <div key={s.id} className={`p-5 rounded-2xl border ${s.status==='open'?'bg-white shadow-sm border-emerald-200':'bg-gray-50 border-gray-200'}`}><div className="flex justify-between items-start mb-4"><div><h4 className="text-2xl font-black font-mono tracking-widest text-slate-800">{s.token}</h4><div className="flex flex-wrap gap-2 mt-2"><span className="bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs px-2 py-1 rounded font-bold">{s.mapel}</span><span className="bg-gray-200 text-xs px-2 py-1 rounded font-bold text-gray-700">Kls: {s.kelas}-{s.subKelas}</span></div></div><span className={`p-1.5 rounded-full ${s.status==='open'?'bg-emerald-100 text-emerald-600':'bg-red-100 text-red-600'}`}>{s.status==='open'?<Unlock size={16}/>:<Lock size={16}/>}</span></div>
+                    <div className="flex gap-2 pt-4 border-t"><button onClick={() => setMonitor(s.token)} className="flex-1 bg-slate-800 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center gap-2"><Eye size={16}/> Monitor</button><button onClick={() => toggleSession(s.id, s.status)} className="p-2.5 bg-gray-100 rounded-xl text-gray-600">{s.status==='open'?<Lock size={18}/>:<Unlock size={18}/>}</button><button onClick={() => delSession(s.id)} className="p-2.5 bg-red-50 text-red-600 rounded-xl"><Trash2 size={18}/></button></div></div>
                   ))}</div>
               </div>
             </div>
@@ -114,11 +100,31 @@ export default function TeacherDashboard({ onLogout }) {
 
           {activeTab === 'proctor' && (
             <div className="space-y-6">
-              <select value={activeMonitorToken} onChange={(e) => setMonitor(e.target.value)} className="p-3 rounded-xl w-full max-w-sm border"><option value="">Pilih Sesi...</option>{mySessions.map(s => <option key={s.token} value={s.token}>{s.token} ({s.kelas}-{s.subKelas})</option>)}</select>
-              {activeMonitorToken && (
-                <table className="w-full bg-white rounded-xl shadow-sm"><thead className="bg-gray-100"><tr><th className="p-4 text-left">Nama</th><th className="p-4 text-left">Kls</th><th className="p-4 text-left">Prog</th></tr></thead><tbody>
-                  {monitoredStudents.map(s => (<tr key={s.id} className="border-t"><td className="p-4 font-bold">{s?.name || '-'} {s?.warnings > 0 && <span className="text-red-500 text-xs">(!Tab)</span>}</td><td className="p-4">{s?.class}-{s?.subKelas}</td><td className="p-4">{s?.progress}%</td></tr>))}
-                </tbody></table>
+              <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3 font-bold text-emerald-800"><Eye size={22}/><span>Monitor Live:</span></div>
+                <select value={activeMonitorToken} onChange={(e) => setMonitor(e.target.value)} className="w-full sm:w-auto p-2.5 rounded-lg border outline-none font-bold text-slate-700"><option value="">-- Pilih Sesi --</option>{mySessions.map(s => <option key={s.token} value={s.token}>{s.token} ({s.kelas}-{s.subKelas})</option>)}</select>
+              </div>
+              
+              {!activeMonitorToken ? (
+                <div className="bg-white p-10 rounded-2xl border border-dashed text-center flex flex-col items-center text-gray-400"><Filter size={48} className="mb-4 opacity-50"/><h3 className="font-bold">Menunggu Token</h3></div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border-l-4 border-l-emerald-400 shadow-sm"><p className="text-gray-500 text-xs md:text-sm font-bold mb-1">Terhubung</p><p className="text-3xl md:text-4xl font-black text-slate-800">{monitoredStudents.length}</p></div>
+                    <div className="bg-white p-4 md:p-6 rounded-2xl border-l-4 border-l-emerald-400 shadow-sm"><p className="text-gray-500 text-xs md:text-sm font-bold mb-1">Selesai</p><p className="text-3xl md:text-4xl font-black text-emerald-600">{monitoredStudents.filter(s => s.status === 'Selesai').length}</p></div>
+                    <div className="col-span-2 md:col-span-1 bg-white p-4 md:p-6 rounded-2xl border-l-4 border-l-red-400 shadow-sm"><p className="text-gray-500 text-xs md:text-sm font-bold mb-1">Curang</p><p className="text-3xl md:text-4xl font-black text-red-600">{monitoredStudents.filter(s => s.warnings > 0).length}</p></div>
+                  </div>
+                  {/* TABEL RESPONSIVE */}
+                  <div className="bg-white rounded-2xl shadow-sm border overflow-x-auto w-full">
+                    <table className="w-full min-w-[500px] text-left">
+                      <thead className="bg-gray-50 border-b"><tr><th className="p-4">Nama Siswa</th><th className="p-4">Kls / Sub</th><th className="p-4">Progress</th><th className="p-4 text-right">Aksi</th></tr></thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {monitoredStudents.map(s => (<tr key={s.id}><td className="p-4 font-bold text-slate-800">{s?.name || '-'} {s?.warnings > 0 && <span className="text-red-500 text-xs ml-2 animate-pulse">(!Tab)</span>}</td><td className="p-4"><span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-bold">{s?.class}-{s?.subKelas}</span></td><td className="p-4"><div className="flex items-center gap-2"><div className="w-24 bg-gray-100 h-2 rounded-full overflow-hidden"><div className="bg-emerald-500 h-full" style={{width:`${s?.progress}%`}}></div></div><span className="text-xs font-bold">{s?.progress}%</span></div></td><td className="p-4 text-right"><button onClick={() => update(dbRef(db, `live_students/${s.id}`), { status: 'Selesai' })} disabled={s.status === 'Selesai'} className="text-xs bg-gray-100 text-gray-600 hover:bg-red-100 hover:text-red-600 px-3 py-2 rounded-lg font-bold disabled:opacity-30">Kumpul</button></td></tr>))}
+                        {monitoredStudents.length === 0 && <tr><td colSpan="4" className="text-center p-8 text-gray-400">Belum ada siswa yang masuk ke sesi ini.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -126,71 +132,79 @@ export default function TeacherDashboard({ onLogout }) {
           {activeTab === 'bank' && (
             <div className="space-y-6">
               <input type="file" accept=".xlsx" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-              <div className="flex gap-2"><button onClick={() => setShowModal(true)} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold">Buat Soal</button><button onClick={downloadTemplate} className="bg-white border px-4 py-2 rounded-lg">Template</button><button onClick={() => fileInputRef.current.click()} className="bg-white border text-emerald-700 px-4 py-2 rounded-lg">Import Excel</button></div>
+              {/* TOMBOL RESPONSIVE (Membungkus ke bawah kalau sempit) */}
+              <div className="flex flex-wrap gap-2 md:gap-3">
+                <button onClick={() => setShowModal(true)} className="flex-1 min-w-[140px] bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2"><Plus size={18}/> Buat Soal</button>
+                <button onClick={downloadTemplate} className="flex-1 min-w-[140px] bg-white border border-gray-200 text-slate-700 px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2"><Download size={18}/> Template</button>
+                <button onClick={() => fileInputRef.current.click()} className="flex-1 min-w-[140px] bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2"><Upload size={18}/> Import Excel</button>
+              </div>
               <div className="space-y-4">{myQuestions.map((q, i) => (
-                <div key={q.id} className="bg-white p-4 rounded-xl border flex justify-between"><div className="flex-1"><span className="text-xs font-bold bg-gray-100 px-2 py-1 rounded">{q?.mapel} | Tk.{q?.kelas}</span><p className="font-bold mt-2"><Latex>{`${i+1}. ${q?.pertanyaan || ''}`}</Latex></p><div className="grid grid-cols-2 gap-2 mt-2 text-sm"><div className={`p-2 border rounded ${q?.kunci==='A'?'bg-emerald-50 font-bold':''}`}><Latex>{`A. ${q?.opsiA || ''}`}</Latex></div><div className={`p-2 border rounded ${q?.kunci==='B'?'bg-emerald-50 font-bold':''}`}><Latex>{`B. ${q?.opsiB || ''}`}</Latex></div><div className={`p-2 border rounded ${q?.kunci==='C'?'bg-emerald-50 font-bold':''}`}><Latex>{`C. ${q?.opsiC || ''}`}</Latex></div><div className={`p-2 border rounded ${q?.kunci==='D'?'bg-emerald-50 font-bold':''}`}><Latex>{`D. ${q?.opsiD || ''}`}</Latex></div></div></div><button onClick={() => remove(dbRef(db, `bank_soal/${q.id}`))} className="text-red-500 p-2"><Trash2/></button></div>
-              ))}</div>
+                <div key={q.id} className="bg-white p-4 md:p-6 rounded-2xl border shadow-sm flex flex-col md:flex-row gap-4 md:gap-6 justify-between"><div className="flex-1"><div className="flex gap-2 mb-2"><span className="text-xs font-bold bg-emerald-50 border border-emerald-100 text-emerald-800 px-2 py-1 rounded">{q?.mapel}</span><span className="text-xs font-bold bg-gray-100 px-2 py-1 rounded text-gray-600">Tk.{q?.kelas}</span></div><p className="font-bold text-lg mb-4 text-slate-800 leading-relaxed"><Latex>{`${i+1}. ${q?.pertanyaan || ''}`}</Latex></p><div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm"><div className={`p-3 border rounded-xl ${q?.kunci==='A'?'bg-emerald-50 border-emerald-200 font-bold text-emerald-900':''}`}><Latex>{`A. ${q?.opsiA || ''}`}</Latex></div><div className={`p-3 border rounded-xl ${q?.kunci==='B'?'bg-emerald-50 border-emerald-200 font-bold text-emerald-900':''}`}><Latex>{`B. ${q?.opsiB || ''}`}</Latex></div><div className={`p-3 border rounded-xl ${q?.kunci==='C'?'bg-emerald-50 border-emerald-200 font-bold text-emerald-900':''}`}><Latex>{`C. ${q?.opsiC || ''}`}</Latex></div><div className={`p-3 border rounded-xl ${q?.kunci==='D'?'bg-emerald-50 border-emerald-200 font-bold text-emerald-900':''}`}><Latex>{`D. ${q?.opsiD || ''}`}</Latex></div></div></div><button onClick={() => remove(dbRef(db, `bank_soal/${q.id}`))} className="h-fit text-red-500 bg-red-50 p-3 rounded-xl self-end md:self-auto"><Trash2 size={20}/></button></div>
+              ))}
+              {myQuestions.length === 0 && <div className="text-center p-10 text-gray-400 bg-white rounded-2xl border border-dashed">Bank Soal Kosong.</div>}
+              </div>
             </div>
           )}
 
-          {/* TAB REKAP NILAI (ANTI-CRASH) */}
           {activeTab === 'recap' && (
-            <div className="bg-white p-8 rounded-xl shadow-sm border print:border-none print:shadow-none">
-              <div className="flex justify-between mb-6 print:hidden">
-                <select value={recapFilterKelas} onChange={e => setRecapFilterKelas(e.target.value)} className="p-2 border rounded-lg">
-                  <option value="">Semua Tingkat</option>
-                  {availableRecapKelas.map(k => <option key={k} value={k}>{k}</option>)}
-                </select>
-                <button onClick={() => window.print()} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold">Cetak PDF</button>
+            <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border print:border-none print:shadow-none">
+              {/* FILTER RESPONSIVE */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3 print:hidden w-full">
+                <h3 className="text-xl font-bold hidden md:block">Rekapitulasi Nilai</h3>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <select value={recapFilterKelas} onChange={e => setRecapFilterKelas(e.target.value)} className="p-2.5 border rounded-xl flex-1 sm:w-48 outline-none font-bold text-slate-700 bg-gray-50">
+                    <option value="">Semua Tingkat</option>
+                    {availableRecapKelas.map(k => <option key={k} value={k}>{k}</option>)}
+                  </select>
+                  <button onClick={() => window.print()} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-md"><Download size={18}/> <span className="hidden sm:inline">Cetak PDF</span></button>
+                </div>
               </div>
               
-              <div className="hidden print:block text-center mb-6"><h1 className="text-2xl font-black">CBT REKAPITULASI NILAI</h1></div>
+              <div className="hidden print:block text-center mb-8 border-b-2 border-black pb-4"><h1 className="text-2xl font-black uppercase tracking-widest">MTS DARMA PERTIWI</h1><h2 className="text-lg font-bold mt-1">HASIL UJIAN BERBASIS KOMPUTER (CBT)</h2></div>
               
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="p-3 border">Rank</th>
-                    <th className="p-3 border">Nama</th>
-                    <th className="p-3 border">Mapel</th>
-                    <th className="p-3 border">Kelas</th>
-                    <th className="p-3 border text-right">Skor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLeaderboard.length > 0 ? filteredLeaderboard.map((s, i) => (
-                    <tr key={s?.id || i}>
-                      <td className="p-3 border">#{i+1}</td>
-                      <td className="p-3 border font-bold">{s?.name || 'Siswa Tanpa Nama'}</td>
-                      <td className="p-3 border">{s?.mapel || '-'}</td>
-                      <td className="p-3 border">{s?.class || '-'}-{s?.subKelas || '-'}</td>
-                      <td className="p-3 border text-right font-black text-emerald-600 print:text-black">{s?.score || 0}</td>
+              {/* TABEL RESPONSIVE ANTI-POTONG */}
+              <div className="overflow-x-auto w-full border border-gray-100 rounded-xl print:border-none print:overflow-visible">
+                <table className="w-full min-w-[500px] text-left border-collapse">
+                  <thead className="bg-gray-50 print:bg-gray-100">
+                    <tr className="border-b">
+                      <th className="p-4 print:border font-bold text-gray-700 w-16">Rank</th>
+                      <th className="p-4 print:border font-bold text-gray-700 min-w-[150px]">Nama Siswa</th>
+                      <th className="p-4 print:border font-bold text-gray-700">Mapel</th>
+                      <th className="p-4 print:border font-bold text-gray-700">Kelas</th>
+                      <th className="p-4 print:border font-bold text-gray-700 text-right">Skor</th>
                     </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan="5" className="p-8 text-center text-gray-500">Belum ada data nilai masuk untuk Anda.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-              
-              <div className="hidden print:block mt-16 text-right">
-                <p>Guru Mata Pelajaran</p><br/><br/>
-                <p className="font-bold uppercase">{teacherProfile?.name || '_________________'}</p>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredLeaderboard.length > 0 ? filteredLeaderboard.map((s, i) => (
+                      <tr key={s?.id || i} className="hover:bg-gray-50/50">
+                        <td className="p-4 print:border text-slate-500 font-bold">#{i+1}</td>
+                        <td className="p-4 print:border font-bold text-slate-800">{s?.name || 'Siswa Tanpa Nama'}</td>
+                        <td className="p-4 print:border text-emerald-700 font-bold text-sm">{s?.mapel || '-'}</td>
+                        <td className="p-4 print:border"><span className="bg-gray-100 px-2 py-1 rounded text-xs font-bold text-slate-600">{s?.class || '-'}-{s?.subKelas || '-'}</span></td>
+                        <td className="p-4 print:border text-right"><span className="text-xl font-black text-emerald-600 print:text-black">{s?.score || 0}</span></td>
+                      </tr>
+                    )) : (
+                      <tr><td colSpan="5" className="p-10 text-center text-gray-400">Belum ada data nilai masuk untuk Anda.</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
+              
+              <div className="hidden print:flex justify-end mt-16 text-center"><div><p className="mb-16">Mengetahui,<br/>Guru Mata Pelajaran</p><p className="font-bold uppercase border-b border-black pb-1 min-w-[200px]">{teacherProfile?.name || '_________________'}</p></div></div>
             </div>
           )}
         </div>
       </main>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60] print:hidden">
-          <div className="bg-white p-6 rounded-2xl w-full max-w-xl"><h2 className="font-bold mb-4">Tulis Soal</h2>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[110] print:hidden">
+          <div className="bg-white p-6 md:p-8 rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto"><h2 className="text-xl font-black mb-4 text-slate-800">Tulis Soal</h2>
             <form onSubmit={handleAddSoal} className="space-y-4">
-              <div className="flex gap-2"><input required value={formData.mapel} placeholder="Mapel" className="w-full p-3 border rounded" onChange={e => setFormData({...formData, mapel: e.target.value})} /><input required value={formData.kelas} placeholder="Tingkat" className="w-full p-3 border rounded" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
-              <textarea required value={formData.pertanyaan} placeholder="Pertanyaan (Gunakan $...$ untuk matematika)" className="w-full p-3 border rounded" rows="3" onChange={e => setFormData({...formData, pertanyaan: e.target.value})} />
-              <div className="grid grid-cols-2 gap-2">{['A','B','C','D'].map(opt => <input key={opt} required value={formData[`opsi${opt}`]} placeholder={`Opsi ${opt}`} className="p-3 border rounded" onChange={e => setFormData({...formData, [`opsi${opt}`]: e.target.value})} />)}</div>
-              <select className="w-full p-3 border rounded bg-gray-50" value={formData.kunci} onChange={e => setFormData({...formData, kunci: e.target.value})}><option value="A">Kunci A</option><option value="B">Kunci B</option><option value="C">Kunci C</option><option value="D">Kunci D</option></select>
-              <div className="flex gap-2"><button type="button" onClick={() => setShowModal(false)} className="flex-1 p-3 bg-gray-200 rounded font-bold">Batal</button><button type="submit" className="flex-1 p-3 bg-emerald-600 text-white rounded font-bold">Simpan</button></div>
+              <div className="flex flex-col sm:flex-row gap-4"><input required value={formData.mapel} placeholder="Mapel" className="w-full p-3.5 border bg-gray-50 rounded-xl outline-none focus:ring-2 ring-emerald-300 font-bold" onChange={e => setFormData({...formData, mapel: e.target.value})} /><input required value={formData.kelas} placeholder="Tingkat (Cth: 9)" className="w-full p-3.5 border bg-gray-50 rounded-xl outline-none focus:ring-2 ring-emerald-300 font-bold" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
+              <textarea required value={formData.pertanyaan} placeholder="Pertanyaan (Gunakan $...$ untuk matematika)" className="w-full p-4 border bg-gray-50 rounded-xl outline-none focus:ring-2 ring-emerald-300 min-h-[100px]" onChange={e => setFormData({...formData, pertanyaan: e.target.value})} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{['A','B','C','D'].map(opt => <input key={opt} required value={formData[`opsi${opt}`]} placeholder={`Opsi ${opt}`} className="w-full p-3.5 border bg-gray-50 rounded-xl outline-none focus:ring-2 ring-emerald-300" onChange={e => setFormData({...formData, [`opsi${opt}`]: e.target.value})} />)}</div>
+              <select className="w-full p-3.5 border border-emerald-200 bg-emerald-50 text-emerald-900 font-black rounded-xl outline-none" value={formData.kunci} onChange={e => setFormData({...formData, kunci: e.target.value})}><option value="A">Kunci A</option><option value="B">Kunci B</option><option value="C">Kunci C</option><option value="D">Kunci D</option></select>
+              <div className="flex gap-3 pt-2"><button type="button" onClick={() => setShowModal(false)} className="flex-1 py-4 bg-gray-100 rounded-xl font-bold text-gray-600">Batal</button><button type="submit" className="flex-1 py-4 bg-emerald-600 text-white rounded-xl font-bold shadow-lg">Simpan Soal</button></div>
             </form>
           </div>
         </div>
