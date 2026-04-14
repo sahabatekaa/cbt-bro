@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "firebase": "^10.0.0",
-    "lucide-react": "^0.300.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "lucide-react": "latest",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "xlsx": "^0.18.5",
     "katex": "^0.16.9",
     "react-latex-next": "^2.2.0"
