@@ -28,7 +28,7 @@ export default function TeacherDashboard({ onLogout }) {
   const [recapKelas, setRecapKelas] = useState('');
   const [recapSubKelas, setRecapSubKelas] = useState('');
 
-  // STATE FORM SOAL & EDIT (Tanpa Sub-Kelas)
+  // STATE FORM SOAL & EDIT
   const defaultForm = { mapel: '', kelas: '', pertanyaan: '', opsiA: '', opsiB: '', opsiC: '', opsiD: '', kunci: 'A' };
   const [formData, setFormData] = useState(defaultForm);
   const [editSoalId, setEditSoalId] = useState(null);
@@ -47,33 +47,22 @@ export default function TeacherDashboard({ onLogout }) {
     fetchData('live_students', 'live'); fetchData('bank_soal', 'bank'); fetchData('leaderboard', 'lead'); fetchData('exam_sessions', 'sessions');
   }, [currentUserEmail]);
 
-  // Data Mentah Milik Guru
   const myQuestions = (data.bank || []).filter(q => q?.teacherEmail === currentUserEmail);
   const mySessions = (data.sessions || []).filter(s => s?.teacherEmail === currentUserEmail);
   const myLeaderboard = (data.lead || []).filter(s => s?.teacherEmail === currentUserEmail).sort((a,b) => (Number(b?.score) || 0) - (Number(a?.score) || 0));
   const monitoredStudents = (data.live || []).filter(s => s?.token === activeMonitorToken);
 
-  // Opsi Dropdown Sesi
   const availableMapel = [...new Set(myQuestions.map(q => q?.mapel).filter(Boolean))];
   const availableKelasSesi = [...new Set(myQuestions.filter(q => q?.mapel === selectedMapelSesi).map(q => q?.kelas).filter(Boolean))];
 
-  // Filter Bank Soal
   const availableBankMapel = [...new Set(myQuestions.map(q => q?.mapel).filter(Boolean))];
   const availableBankKelas = [...new Set(myQuestions.map(q => q?.kelas).filter(Boolean))];
-  const filteredQuestions = myQuestions.filter(q => 
-    (bankMapel === '' || q?.mapel === bankMapel) &&
-    (bankKelas === '' || q?.kelas === bankKelas)
-  );
+  const filteredQuestions = myQuestions.filter(q => (bankMapel === '' || q?.mapel === bankMapel) && (bankKelas === '' || q?.kelas === bankKelas));
 
-  // Filter Rekap Nilai
   const availableRecapMapel = [...new Set(myLeaderboard.map(s => s?.mapel).filter(Boolean))];
   const availableRecapKelas = [...new Set(myLeaderboard.map(s => s?.class).filter(Boolean))];
   const availableRecapSubKelas = [...new Set(myLeaderboard.map(s => s?.subKelas).filter(Boolean))];
-  const filteredLeaderboard = myLeaderboard.filter(s => 
-    (recapMapel === '' || s?.mapel === recapMapel) &&
-    (recapKelas === '' || s?.class === recapKelas) &&
-    (recapSubKelas === '' || s?.subKelas === recapSubKelas)
-  );
+  const filteredLeaderboard = myLeaderboard.filter(s => (recapMapel === '' || s?.mapel === recapMapel) && (recapKelas === '' || s?.class === recapKelas) && (recapSubKelas === '' || s?.subKelas === recapSubKelas));
 
   // FUNGSI AKSI SOAL
   const handleAddOrEditSoal = (e) => { 
@@ -93,8 +82,36 @@ export default function TeacherDashboard({ onLogout }) {
     setEditSoalId(q.id); setShowModal(true);
   };
 
-  const downloadTemplate = () => { XLSX.writeFile(XLSX.utils.book_append_sheet(XLSX.utils.book_new(), XLSX.utils.json_to_sheet([{ mapel: "Matematika", kelas: "9", pertanyaan: "Jika $x^2 = 4$, maka $x$ adalah?", opsiA: "2", opsiB: "3", opsiC: "4", opsiD: "5", kunci: "A" }]), "Soal"), "Template.xlsx"); };
-  const handleFileUpload = (e) => { const reader = new FileReader(); reader.onload = (evt) => { const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); d.forEach(i => { if (i.pertanyaan && i.kunci) push(dbRef(db, 'bank_soal'), { ...i, teacherEmail: currentUserEmail }); }); alert("Import Sukses!"); if(fileInputRef.current) fileInputRef.current.value = ''; }; reader.readAsBinaryString(e.target.files[0]); };
+  // AMAN DARI SILENT CRASH
+  const downloadTemplate = () => { 
+    try {
+      const ws = XLSX.utils.json_to_sheet([{ mapel: "Matematika", kelas: "9", pertanyaan: "Jika $x^2 = 4$, maka $x$ adalah?", opsiA: "2", opsiB: "3", opsiC: "4", opsiD: "5", kunci: "A" }]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Soal");
+      XLSX.writeFile(wb, "Template_CBT_Soal.xlsx"); 
+    } catch(err) { alert("Gagal mendownload template: " + err.message); }
+  };
+
+  const triggerImport = () => {
+    if(fileInputRef.current) fileInputRef.current.click();
+    else alert("Tombol belum siap, silakan muat ulang halaman.");
+  };
+
+  const handleFileUpload = (e) => { 
+    try {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader(); 
+      reader.onload = (evt) => { 
+        const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); 
+        let count = 0;
+        d.forEach(i => { if (i.pertanyaan && i.kunci) { push(dbRef(db, 'bank_soal'), { ...i, teacherEmail: currentUserEmail }); count++; } }); 
+        alert(`${count} Soal berhasil di-import dari Excel!`); 
+        if(fileInputRef.current) fileInputRef.current.value = ''; 
+      }; 
+      reader.readAsBinaryString(file); 
+    } catch(err) { alert("Gagal import file: " + err.message); }
+  };
   
   // FUNGSI SESI
   const handleCreateSession = (e) => { e.preventDefault(); const t = document.getElementById('token_input').value; const k = document.getElementById('kelas_session').value; const sk = document.getElementById('subkelas_session').value.toUpperCase(); if(!t || !selectedMapelSesi || !k || !sk) return alert("Lengkapi data!"); push(dbRef(db, 'exam_sessions'), { token: t, mapel: selectedMapelSesi, kelas: k, subKelas: sk, status: 'open', teacherEmail: currentUserEmail, timestamp: Date.now() }); document.getElementById('token_input').value = ''; alert("Sesi dibuka!"); };
@@ -125,15 +142,15 @@ export default function TeacherDashboard({ onLogout }) {
         
         <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50">
           
-          {/* TAB SESI UJIAN */}
+          {/* TAB SESI */}
           {activeTab === 'settings' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="bg-white p-5 md:p-6 rounded-2xl shadow-sm border h-fit"><h3 className="font-bold mb-4 flex items-center gap-2"><Plus className="text-emerald-500"/> Buka Sesi</h3>
                 <form onSubmit={handleCreateSession} className="space-y-4">
-                  <select value={selectedMapelSesi} onChange={(e) => setSelectedMapelSesi(e.target.value)} required className="w-full p-3 border rounded-xl outline-none"><option value="">Mapel...</option>{availableMapel.map(m => <option key={m}>{m}</option>)}</select>
-                  <div className="flex gap-2"><select id="kelas_session" required disabled={!selectedMapelSesi} className="w-full p-3 border rounded-xl outline-none"><option value="">Tingkat...</option>{availableKelasSesi.map(k => <option key={k}>{k}</option>)}</select><input id="subkelas_session" placeholder="Sub/Ruang (Cth: A)" required className="w-full p-3 border rounded-xl uppercase font-bold text-center" /></div>
-                  <div className="flex gap-2"><input id="token_input" required placeholder="Token" className="w-full p-3 border rounded-xl uppercase font-mono font-bold" /><button type="button" onClick={() => document.getElementById('token_input').value = Math.random().toString(36).substring(2,7).toUpperCase()} className="p-3 bg-emerald-100 text-emerald-700 rounded-xl"><Dices/></button></div>
-                  <button type="submit" className="w-full bg-emerald-600 text-white py-3.5 rounded-xl font-bold shadow-md">Rilis Sesi</button>
+                  <select value={selectedMapelSesi} onChange={(e) => setSelectedMapelSesi(e.target.value)} required className="w-full p-3.5 border rounded-xl outline-none font-semibold text-slate-700"><option value="">Mapel...</option>{availableMapel.map(m => <option key={m}>{m}</option>)}</select>
+                  <div className="flex gap-2"><select id="kelas_session" required disabled={!selectedMapelSesi} className="w-full p-3.5 border rounded-xl outline-none font-semibold text-slate-700"><option value="">Tingkat...</option>{availableKelasSesi.map(k => <option key={k}>{k}</option>)}</select><input id="subkelas_session" placeholder="Sub/Ruang (Cth: A)" required className="w-full p-3.5 border rounded-xl uppercase font-bold text-center" /></div>
+                  <div className="flex gap-2"><input id="token_input" required placeholder="Token Akses" className="w-full p-3.5 border rounded-xl uppercase font-mono font-bold tracking-widest" /><button type="button" onClick={() => document.getElementById('token_input').value = Math.random().toString(36).substring(2,7).toUpperCase()} className="p-3.5 bg-emerald-100 text-emerald-700 rounded-xl"><Dices/></button></div>
+                  <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md active:scale-95 transition-transform">Rilis Sesi</button>
                 </form>
               </div>
               <div className="lg:col-span-2 space-y-4"><h3 className="font-bold">Sesi Ujian Aktif</h3>
@@ -150,7 +167,7 @@ export default function TeacherDashboard({ onLogout }) {
             <div className="space-y-6">
               <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3 font-bold text-emerald-800"><Eye size={22}/><span>Monitor Live:</span></div>
-                <select value={activeMonitorToken} onChange={(e) => setMonitor(e.target.value)} className="w-full sm:w-auto p-2.5 rounded-lg border outline-none font-bold text-slate-700"><option value="">-- Pilih Sesi --</option>{mySessions.map(s => <option key={s.token} value={s.token}>{s.token} ({s.kelas}-{s.subKelas})</option>)}</select>
+                <select value={activeMonitorToken} onChange={(e) => setMonitor(e.target.value)} className="w-full sm:w-auto p-3 rounded-xl border outline-none font-bold text-slate-700 bg-white"><option value="">-- Pilih Sesi --</option>{mySessions.map(s => <option key={s.token} value={s.token}>{s.token} ({s.kelas}-{s.subKelas})</option>)}</select>
               </div>
               {!activeMonitorToken ? (
                 <div className="bg-white p-10 rounded-2xl border border-dashed text-center flex flex-col items-center text-gray-400"><Filter size={48} className="mb-4 opacity-50"/><h3 className="font-bold">Menunggu Token</h3></div>
@@ -167,28 +184,36 @@ export default function TeacherDashboard({ onLogout }) {
             </div>
           )}
 
-          {/* TAB BANK SOAL */}
+          {/* TAB BANK SOAL (UI HP DIPERBAIKI) */}
           {activeTab === 'bank' && (
             <div className="space-y-6">
-              <input type="file" accept=".xlsx" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+              <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
               
-              <div className="bg-white p-4 rounded-xl border flex flex-col md:flex-row gap-3 print:hidden">
-                <div className="flex-1 flex gap-2 overflow-x-auto">
-                  <select value={bankMapel} onChange={e => setBankMapel(e.target.value)} className="p-2 border rounded-lg bg-gray-50 outline-none text-sm font-bold min-w-[120px]"><option value="">Semua Mapel</option>{availableBankMapel.map(m => <option key={m}>{m}</option>)}</select>
-                  <select value={bankKelas} onChange={e => setBankKelas(e.target.value)} className="p-2 border rounded-lg bg-gray-50 outline-none text-sm font-bold min-w-[120px]"><option value="">Semua Tingkat</option>{availableBankKelas.map(k => <option key={k}>{k}</option>)}</select>
+              <div className="bg-white p-5 rounded-2xl shadow-sm border print:hidden space-y-4">
+                {/* Baris 1: Filter Dropdown */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <select value={bankMapel} onChange={e => setBankMapel(e.target.value)} className="flex-1 p-3 border rounded-xl bg-gray-50 outline-none text-sm font-bold text-slate-700 cursor-pointer"><option value="">Semua Mapel</option>{availableBankMapel.map(m => <option key={m}>{m}</option>)}</select>
+                  <select value={bankKelas} onChange={e => setBankKelas(e.target.value)} className="flex-1 p-3 border rounded-xl bg-gray-50 outline-none text-sm font-bold text-slate-700 cursor-pointer"><option value="">Semua Tingkat</option>{availableBankKelas.map(k => <option key={k}>{k}</option>)}</select>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {/* TOMBOL TEMPLATE DIKEMBALIKAN */}
-                  <button onClick={downloadTemplate} className="bg-white border border-gray-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap"><Download size={16}/> Template Excel</button>
-                  <button onClick={() => fileInputRef.current.click()} className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap"><Upload size={16}/> Import</button>
-                  <button onClick={() => { setEditSoalId(null); setFormData(defaultForm); setShowModal(true); }} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap"><Plus size={16}/> Buat Soal</button>
+                
+                {/* Baris 2: Tombol Aksi */}
+                <div className="flex flex-wrap gap-2 sm:gap-3 pt-3 border-t border-gray-100">
+                  <button onClick={downloadTemplate} className="flex-1 sm:flex-none bg-white border border-gray-200 text-slate-700 px-4 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform"><Download size={18}/> Template</button>
+                  <button onClick={triggerImport} className="flex-1 sm:flex-none bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform"><Upload size={18}/> Import</button>
+                  <button onClick={() => { setEditSoalId(null); setFormData(defaultForm); setShowModal(true); }} className="w-full sm:w-auto bg-emerald-600 text-white px-5 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-md active:scale-95 transition-transform"><Plus size={18}/> Buat Soal</button>
                 </div>
               </div>
 
+              <div className="hidden print:block text-center mb-8 border-b-2 border-black pb-4">
+                <h1 className="text-2xl font-black uppercase tracking-widest">MTS DARMA PERTIWI</h1>
+                <h2 className="text-lg font-bold mt-1">BANK SOAL UJIAN (CBT)</h2>
+                <p className="mt-2 text-sm font-bold">Mapel: {bankMapel || 'Semua'} | Tingkat: {bankKelas || 'Semua'}</p>
+              </div>
+
               <div className="space-y-4">{filteredQuestions.map((q, i) => (
-                <div key={q.id} className="bg-white p-4 md:p-6 rounded-2xl border shadow-sm flex flex-col md:flex-row gap-4 justify-between">
+                <div key={q.id} className="bg-white p-5 md:p-6 rounded-2xl border shadow-sm flex flex-col md:flex-row gap-4 justify-between print:border-b print:shadow-none print:mb-4 print:pb-4 relative z-0">
                   <div className="flex-1">
-                    <div className="flex gap-2 mb-2 print:hidden"><span className="text-xs font-bold bg-emerald-50 border border-emerald-100 text-emerald-800 px-2 py-1 rounded">{q?.mapel}</span><span className="text-xs font-bold bg-gray-100 px-2 py-1 rounded text-gray-600">Tk. {q?.kelas}</span></div>
+                    <div className="flex gap-2 mb-3 print:hidden"><span className="text-xs font-bold bg-emerald-50 border border-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg">{q?.mapel}</span><span className="text-xs font-bold bg-gray-100 px-2.5 py-1 rounded-lg text-gray-600">Tk. {q?.kelas}</span></div>
                     <p className="font-bold text-lg mb-4 text-slate-800 leading-relaxed"><Latex>{`${i+1}. ${q?.pertanyaan || ''}`}</Latex></p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                       <div className={`p-3 border rounded-xl print:border-none print:p-1 ${q?.kunci==='A'?'bg-emerald-50 border-emerald-200 font-bold text-emerald-900 print:bg-gray-200':''}`}><Latex>{`A. ${q?.opsiA || ''}`}</Latex></div>
@@ -197,13 +222,13 @@ export default function TeacherDashboard({ onLogout }) {
                       <div className={`p-3 border rounded-xl print:border-none print:p-1 ${q?.kunci==='D'?'bg-emerald-50 border-emerald-200 font-bold text-emerald-900 print:bg-gray-200':''}`}><Latex>{`D. ${q?.opsiD || ''}`}</Latex></div>
                     </div>
                   </div>
-                  <div className="flex gap-2 self-end md:self-start print:hidden">
-                    <button onClick={() => openEditModal(q)} className="h-fit text-blue-600 bg-blue-50 hover:bg-blue-100 p-3 rounded-xl"><Edit size={20}/></button>
-                    <button onClick={() => remove(dbRef(db, `bank_soal/${q.id}`))} className="h-fit text-red-500 bg-red-50 hover:bg-red-100 p-3 rounded-xl"><Trash2 size={20}/></button>
+                  <div className="flex gap-2 self-end md:self-start print:hidden mt-2 md:mt-0 relative z-10">
+                    <button onClick={() => openEditModal(q)} className="cursor-pointer active:scale-90 text-blue-600 bg-blue-50 border border-blue-100 p-3 rounded-xl shadow-sm"><Edit size={20}/></button>
+                    <button onClick={() => remove(dbRef(db, `bank_soal/${q.id}`))} className="cursor-pointer active:scale-90 text-red-500 bg-red-50 border border-red-100 p-3 rounded-xl shadow-sm"><Trash2 size={20}/></button>
                   </div>
                 </div>
               ))}
-              {filteredQuestions.length === 0 && <div className="text-center p-10 text-gray-400 bg-white rounded-2xl border border-dashed print:hidden">Soal tidak ditemukan.</div>}
+              {filteredQuestions.length === 0 && <div className="text-center p-10 text-gray-400 bg-white rounded-2xl border border-dashed print:hidden">Belum ada soal.</div>}
               </div>
             </div>
           )}
@@ -211,14 +236,16 @@ export default function TeacherDashboard({ onLogout }) {
           {/* TAB REKAP NILAI */}
           {activeTab === 'recap' && (
             <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border print:border-none print:shadow-none print:p-0">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 print:hidden w-full">
-                <h3 className="text-xl font-bold hidden lg:block">Rekap Nilai</h3>
-                <div className="flex-1 flex gap-2 overflow-x-auto w-full">
-                  <select value={recapMapel} onChange={e => setRecapMapel(e.target.value)} className="p-2.5 border rounded-xl outline-none font-bold text-slate-700 bg-gray-50 min-w-[120px]"><option value="">Semua Mapel</option>{availableRecapMapel.map(m => <option key={m}>{m}</option>)}</select>
-                  <select value={recapKelas} onChange={e => setRecapKelas(e.target.value)} className="p-2.5 border rounded-xl outline-none font-bold text-slate-700 bg-gray-50 min-w-[120px]"><option value="">Semua Tingkat</option>{availableRecapKelas.map(k => <option key={k}>{k}</option>)}</select>
-                  <select value={recapSubKelas} onChange={e => setRecapSubKelas(e.target.value)} className="p-2.5 border rounded-xl outline-none font-bold text-slate-700 bg-gray-50 min-w-[120px]"><option value="">Semua Ruang</option>{availableRecapSubKelas.map(sk => <option key={sk}>{sk}</option>)}</select>
+              <div className="bg-gray-50 p-5 rounded-2xl border mb-6 print:hidden space-y-4">
+                <h3 className="text-lg font-bold text-slate-800">Filter Rekap Nilai</h3>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <select value={recapMapel} onChange={e => setRecapMapel(e.target.value)} className="flex-1 p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white cursor-pointer"><option value="">Semua Mapel</option>{availableRecapMapel.map(m => <option key={m}>{m}</option>)}</select>
+                  <select value={recapKelas} onChange={e => setRecapKelas(e.target.value)} className="flex-1 p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white cursor-pointer"><option value="">Semua Tingkat</option>{availableRecapKelas.map(k => <option key={k}>{k}</option>)}</select>
+                  <select value={recapSubKelas} onChange={e => setRecapSubKelas(e.target.value)} className="flex-1 p-3 border rounded-xl outline-none font-bold text-slate-700 bg-white cursor-pointer"><option value="">Semua Ruang</option>{availableRecapSubKelas.map(sk => <option key={sk}>{sk}</option>)}</select>
                 </div>
-                <button onClick={() => window.print()} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-md whitespace-nowrap"><Download size={18}/> Cetak PDF</button>
+                <div className="flex justify-end pt-2 border-t border-gray-200">
+                  <button onClick={() => window.print()} className="w-full sm:w-auto bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md active:scale-95"><Download size={18}/> Cetak PDF</button>
+                </div>
               </div>
               
               <div className="hidden print:block text-center mb-8 border-b-2 border-black pb-4">
@@ -233,7 +260,7 @@ export default function TeacherDashboard({ onLogout }) {
                   <tbody className="divide-y divide-gray-50">
                     {filteredLeaderboard.length > 0 ? filteredLeaderboard.map((s, i) => (
                       <tr key={s?.id || i} className="hover:bg-gray-50/50"><td className="p-4 print:border text-slate-500 font-bold">#{i+1}</td><td className="p-4 print:border font-bold text-slate-800">{s?.name || 'Siswa Tanpa Nama'}</td><td className="p-4 print:border text-emerald-700 font-bold text-sm">{s?.mapel || '-'}</td><td className="p-4 print:border"><span className="bg-gray-100 px-2 py-1 rounded text-xs font-bold text-slate-600">{s?.class || '-'}-{s?.subKelas || '-'}</span></td><td className="p-4 print:border text-right"><span className="text-xl font-black text-emerald-600 print:text-black">{s?.score || 0}</span></td></tr>
-                    )) : (<tr><td colSpan="5" className="p-10 text-center text-gray-400">Belum ada data nilai masuk untuk filter ini.</td></tr>)}
+                    )) : (<tr><td colSpan="5" className="p-10 text-center text-gray-400">Belum ada data nilai masuk.</td></tr>)}
                   </tbody>
                 </table>
               </div>
@@ -244,7 +271,7 @@ export default function TeacherDashboard({ onLogout }) {
         </div>
       </main>
 
-      {/* MODAL TAMBAH/EDIT SOAL (Tanpa Sub Kelas) */}
+      {/* MODAL TAMBAH/EDIT SOAL */}
       {showModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[110] print:hidden">
           <div className="bg-white p-6 md:p-8 rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
@@ -257,10 +284,10 @@ export default function TeacherDashboard({ onLogout }) {
               
               <textarea required value={formData.pertanyaan} placeholder="Pertanyaan (Gunakan $...$ untuk matematika)" className="w-full p-4 border bg-gray-50 rounded-xl outline-none focus:ring-2 ring-emerald-300 min-h-[100px]" onChange={e => setFormData({...formData, pertanyaan: e.target.value})} />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{['A','B','C','D'].map(opt => <input key={opt} required value={formData[`opsi${opt}`]} placeholder={`Opsi ${opt}`} className="w-full p-3.5 border bg-gray-50 rounded-xl outline-none focus:ring-2 ring-emerald-300" onChange={e => setFormData({...formData, [`opsi${opt}`]: e.target.value})} />)}</div>
-              <select className="w-full p-3.5 border border-emerald-200 bg-emerald-50 text-emerald-900 font-black rounded-xl outline-none" value={formData.kunci} onChange={e => setFormData({...formData, kunci: e.target.value})}><option value="A">Kunci A</option><option value="B">Kunci B</option><option value="C">Kunci C</option><option value="D">Kunci D</option></select>
+              <select className="w-full p-3.5 border border-emerald-200 bg-emerald-50 text-emerald-900 font-black rounded-xl outline-none cursor-pointer" value={formData.kunci} onChange={e => setFormData({...formData, kunci: e.target.value})}><option value="A">Kunci A</option><option value="B">Kunci B</option><option value="C">Kunci C</option><option value="D">Kunci D</option></select>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => { setShowModal(false); setEditSoalId(null); setFormData(defaultForm); }} className="flex-1 py-4 bg-gray-100 rounded-xl font-bold text-gray-600">Batal</button>
-                <button type="submit" className="flex-1 py-4 bg-emerald-600 text-white rounded-xl font-bold shadow-lg">{editSoalId ? 'Update Soal' : 'Simpan Soal'}</button>
+                <button type="button" onClick={() => { setShowModal(false); setEditSoalId(null); setFormData(defaultForm); }} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 rounded-xl font-bold text-gray-600 active:scale-95 transition-transform cursor-pointer">Batal</button>
+                <button type="submit" className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-lg active:scale-95 transition-transform cursor-pointer">{editSoalId ? 'Update Soal' : 'Simpan Soal'}</button>
               </div>
             </form>
           </div>
