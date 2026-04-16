@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
 import { ref, onValue, update, remove, set } from 'firebase/database';
-import { Activity, BookOpen, Users, LogOut, ShieldAlert, CheckCircle, XCircle, Trash2, Edit, AlertTriangle, Menu, X, ShieldCheck, Lock, UserCog, Plus, Crown } from 'lucide-react';
+// PENTING: Tambahkan library excel untuk Master Download
+import * as XLSX from 'xlsx'; 
+// PENTING: Penambahan ikon Download dan Settings
+import { Activity, BookOpen, Users, LogOut, ShieldAlert, CheckCircle, XCircle, Trash2, Edit, AlertTriangle, Menu, X, ShieldCheck, Lock, UserCog, Plus, Crown, Download, Settings } from 'lucide-react';
 import Latex from 'react-latex-next';
 import 'katex/dist/katex.min.css';
 
@@ -10,7 +13,8 @@ export default function SuperAdminDashboard({ onLogout }) {
   useEffect(() => { localStorage.setItem('superAdminTab', activeTab); }, [activeTab]);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [data, setData] = useState({ users: [], live: [], bank: [], sessions: [] });
+  // TAMBAHAN: Masukkan 'lead' (leaderboard) ke dalam state untuk rekap nilai master
+  const [data, setData] = useState({ users: [], live: [], bank: [], sessions: [], lead: [] });
   
   const [filterGuru, setFilterGuru] = useState('');
   const [filterMapel, setFilterMapel] = useState('');
@@ -36,9 +40,10 @@ export default function SuperAdminDashboard({ onLogout }) {
     fetchData('live_students', 'live');
     fetchData('bank_soal', 'bank');
     fetchData('exam_sessions', 'sessions');
+    // TAMBAHAN: Tarik data nilai siswa ke Dasbor Pusat
+    fetchData('leaderboard', 'lead'); 
   }, []);
 
-  // AMAN DARI BOLONG: Ambil user dengan filter yang aman
   const pendingTeachers = data.users.filter(u => u?.status === 'pending' && u?.email !== 'admin@sekolah.com');
   const activeTeachers = data.users.filter(u => u?.status !== 'pending' && u?.email !== 'admin@sekolah.com');
   
@@ -57,7 +62,6 @@ export default function SuperAdminDashboard({ onLogout }) {
   const rejectTeacher = (id) => { if(window.confirm("Tolak & Hapus pendaftar ini?")) remove(ref(db, `users/${id}`)); };
   const deleteTeacher = (id) => { if(window.confirm("PERINGATAN OTORITAS!\nHapus akun guru ini secara permanen dari server pusat?")) remove(ref(db, `users/${id}`)); };
 
-  // AMAN DARI BOLONG: Beri nilai default jika kosong
   const openEditGuruModal = (teacher) => { 
     setEditGuruId(teacher.id); 
     setGuruFormData({ name: teacher?.name || '', email: teacher?.email || '' }); 
@@ -77,6 +81,38 @@ export default function SuperAdminDashboard({ onLogout }) {
 
   const openEditSoalModal = (q) => { setSoalFormData({ mapel: q?.mapel||'', kelas: q?.kelas||'', pertanyaan: q?.pertanyaan||'', opsiA: q?.opsiA||'', opsiB: q?.opsiB||'', opsiC: q?.opsiC||'', opsiD: q?.opsiD||'', kunci: q?.kunci||'A' }); setEditSoalId(q.id); setShowSoalModal(true); };
   const handleUpdateSoal = (e) => { e.preventDefault(); update(ref(db, `bank_soal/${editSoalId}`), { ...soalFormData }); alert("Soal berhasil dimodifikasi oleh Admin!"); setShowSoalModal(false); };
+
+  // ==========================================
+  // FITUR BARU: PUSAT KENDALI (DANGER ZONE)
+  // ==========================================
+  const resetLiveStudents = () => {
+    if(window.confirm("🚨 PERINGATAN BAHAYA!\nSemua data siswa yang sedang Ujian/Live akan disapu bersih dari server. Pastikan tidak ada yang sedang ujian.\n\nLanjutkan?")) {
+      remove(ref(db, 'live_students'));
+      alert("Database Live Siswa berhasil dibersihkan.");
+    }
+  };
+
+  const resetAllSessions = () => {
+    if(window.confirm("🚨 PERINGATAN BAHAYA!\nSemua token sesi ujian (termasuk yang dibuat guru) akan dihapus permanen.\n\nLanjutkan?")) {
+      remove(ref(db, 'exam_sessions'));
+      alert("Database Sesi Ujian berhasil direset.");
+    }
+  };
+
+  const downloadMasterRecap = () => {
+    if (!data.lead || data.lead.length === 0) {
+      return alert("Belum ada data nilai yang masuk ke pusat.");
+    }
+    try {
+      const ws = XLSX.utils.json_to_sheet(data.lead);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Rekap Master");
+      XLSX.writeFile(wb, `MASTER_REKAP_CBT_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
+    } catch(err) {
+      alert("Gagal mengunduh rekap master: " + err.message);
+    }
+  };
+  // ==========================================
 
   const NavItem = ({ tab, icon: Icon, label, badge }) => (
     <button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex justify-between items-center p-4 rounded-xl transition-all ${activeTab === tab ? 'bg-amber-500 text-black font-black shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:bg-slate-900 hover:text-white font-bold'}`}>
@@ -116,20 +152,50 @@ export default function SuperAdminDashboard({ onLogout }) {
         
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
           
-          {/* TAB RADAR */}
+          {/* TAB RADAR (UI BARU DENGAN DANGER ZONE) */}
           {activeTab === 'radar' && (
             <div className="space-y-6 max-w-6xl mx-auto">
-              <h3 className="text-2xl font-black text-white mb-6 flex items-center gap-3"><Activity className="text-amber-500"/> Radar Aktivitas</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 border-b-4 border-b-blue-500 shadow-xl relative overflow-hidden"><div className="absolute -right-4 -bottom-4 opacity-5"><Users size={100}/></div><p className="text-slate-400 font-bold text-xs mb-2 uppercase tracking-widest">Siswa Berjalan</p><p className="text-5xl font-black text-white">{stats.online}</p></div>
-                <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 border-b-4 border-b-emerald-500 shadow-xl relative overflow-hidden"><div className="absolute -right-4 -bottom-4 opacity-5"><CheckCircle size={100}/></div><p className="text-slate-400 font-bold text-xs mb-2 uppercase tracking-widest">Siswa Selesai</p><p className="text-5xl font-black text-emerald-400">{stats.selesai}</p></div>
-                <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 border-b-4 border-b-red-600 shadow-xl relative overflow-hidden"><div className="absolute -right-4 -bottom-4 opacity-5"><AlertTriangle size={100}/></div><p className="text-slate-400 font-bold text-xs mb-2 uppercase tracking-widest">Kecurangan</p><p className="text-5xl font-black text-red-500">{stats.curang}</p></div>
+              <h3 className="text-2xl font-black text-white mb-6 flex items-center gap-3"><Activity className="text-amber-500"/> Radar Aktivitas Global</h3>
+              
+              {/* STATISTIK 4 PILAR (Diperbarui) */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-slate-900 p-5 lg:p-6 rounded-3xl border border-slate-800 border-b-4 border-b-amber-500 shadow-xl relative overflow-hidden">
+                  <div className="absolute -right-4 -bottom-4 opacity-5"><Users size={80}/></div>
+                  <p className="text-slate-400 font-bold text-[10px] lg:text-xs mb-2 uppercase tracking-widest">Total Guru</p>
+                  <p className="text-3xl lg:text-4xl font-black text-white">{activeTeachers.length}</p>
+                </div>
+                <div className="bg-slate-900 p-5 lg:p-6 rounded-3xl border border-slate-800 border-b-4 border-b-blue-500 shadow-xl relative overflow-hidden">
+                  <div className="absolute -right-4 -bottom-4 opacity-5"><BookOpen size={80}/></div>
+                  <p className="text-slate-400 font-bold text-[10px] lg:text-xs mb-2 uppercase tracking-widest">Bank Soal</p>
+                  <p className="text-3xl lg:text-4xl font-black text-blue-400">{data.bank.length}</p>
+                </div>
+                <div className="bg-slate-900 p-5 lg:p-6 rounded-3xl border border-slate-800 border-b-4 border-b-emerald-500 shadow-xl relative overflow-hidden">
+                  <div className="absolute -right-4 -bottom-4 opacity-5"><Activity size={80}/></div>
+                  <p className="text-slate-400 font-bold text-[10px] lg:text-xs mb-2 uppercase tracking-widest">Siswa Ujian</p>
+                  <p className="text-3xl lg:text-4xl font-black text-emerald-400">{stats.online}</p>
+                </div>
+                <div className="bg-slate-900 p-5 lg:p-6 rounded-3xl border border-slate-800 border-b-4 border-b-purple-500 shadow-xl relative overflow-hidden">
+                  <div className="absolute -right-4 -bottom-4 opacity-5"><CheckCircle size={80}/></div>
+                  <p className="text-slate-400 font-bold text-[10px] lg:text-xs mb-2 uppercase tracking-widest">Rekap Nilai Masuk</p>
+                  <p className="text-3xl lg:text-4xl font-black text-purple-400">{data.lead?.length || 0}</p>
+                </div>
               </div>
 
+              {/* PUSAT KENDALI DATA (DANGER ZONE) */}
+              <div className="mt-8 bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl">
+                <h4 className="text-amber-500 font-black text-sm uppercase mb-4 tracking-widest flex items-center gap-2"><Settings size={18}/> Pusat Kendali Data</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <button onClick={downloadMasterRecap} className="p-4 bg-emerald-950/40 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-2xl border border-emerald-900/50 font-bold transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"><Download size={20}/> Download Rekap Master</button>
+                  <button onClick={resetLiveStudents} className="p-4 bg-red-950/40 hover:bg-red-600 text-red-500 hover:text-white rounded-2xl border border-red-900/50 font-bold transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"><Trash2 size={20}/> Bersihkan Live Siswa</button>
+                  <button onClick={resetAllSessions} className="p-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl border border-slate-700 font-bold transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"><XCircle size={20}/> Reset Semua Sesi</button>
+                </div>
+              </div>
+
+              {/* DAFTAR SESI BERJALAN */}
               <div className="mt-8 space-y-4">
-                <h4 className="font-bold text-white text-lg border-b border-slate-800 pb-3 flex items-center gap-2"><Lock size={18} className="text-amber-500"/> Sesi Berjalan ({activeSessions.length})</h4>
+                <h4 className="font-bold text-white text-lg border-b border-slate-800 pb-3 flex items-center gap-2"><Lock size={18} className="text-amber-500"/> Sesi Berjalan Aktif ({activeSessions.length})</h4>
                 {activeSessions.length === 0 ? (
-                  <div className="bg-slate-900 p-10 rounded-3xl text-center text-slate-500 border border-dashed border-slate-700 font-medium">Tidak ada aktivitas terdeteksi.</div>
+                  <div className="bg-slate-900 p-10 rounded-3xl text-center text-slate-500 border border-dashed border-slate-700 font-medium">Tidak ada sesi ujian yang berjalan.</div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {activeSessions.map(s => (
@@ -186,7 +252,7 @@ export default function SuperAdminDashboard({ onLogout }) {
             </div>
           )}
 
-          {/* TAB MANAJEMEN GURU (ANTI CRASH) */}
+          {/* TAB MANAJEMEN GURU */}
           {activeTab === 'guru' && (
             <div className="space-y-8 max-w-6xl mx-auto">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -220,12 +286,10 @@ export default function SuperAdminDashboard({ onLogout }) {
                     {activeTeachers.map(t => (
                       <div key={t.id} className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-lg flex flex-col justify-between hover:border-amber-500/30 transition-colors">
                         <div className="flex items-center gap-4 mb-5 border-b border-slate-800/50 pb-4">
-                          {/* ANTI-CRASH ICON GENERATOR */}
                           <div className="w-14 h-14 shrink-0 bg-slate-800 text-amber-500 rounded-full flex items-center justify-center font-black text-2xl uppercase border border-slate-700 shadow-inner">
                             {t?.name ? t.name.charAt(0) : 'G'}
                           </div>
                           <div className="min-w-0">
-                            {/* ANTI-CRASH TEXT */}
                             <p className="font-black text-white text-lg truncate">{t?.name || 'Guru Tanpa Nama'}</p>
                             <p className="font-medium text-slate-400 text-sm truncate">{t?.email || 'Email tidak tersedia'}</p>
                           </div>
