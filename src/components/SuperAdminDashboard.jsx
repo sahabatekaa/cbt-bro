@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
 import { ref, onValue, update, remove, set } from 'firebase/database';
-// PENTING: Tambahkan library excel untuk Master Download
+// PENTING: Tambahkan fungsi reset password dari firebase auth
+import { sendPasswordResetEmail } from 'firebase/auth';
 import * as XLSX from 'xlsx'; 
-// PENTING: Penambahan ikon Download dan Settings
-import { Activity, BookOpen, Users, LogOut, ShieldAlert, CheckCircle, XCircle, Trash2, Edit, AlertTriangle, Menu, X, ShieldCheck, Lock, UserCog, Plus, Crown, Download, Settings } from 'lucide-react';
+import { Activity, BookOpen, Users, LogOut, ShieldAlert, CheckCircle, XCircle, Trash2, Edit, AlertTriangle, Menu, X, ShieldCheck, Lock, UserCog, Plus, Crown, Download, Settings, KeyRound, Landmark } from 'lucide-react';
 import Latex from 'react-latex-next';
 import 'katex/dist/katex.min.css';
 
@@ -13,7 +13,6 @@ export default function SuperAdminDashboard({ onLogout }) {
   useEffect(() => { localStorage.setItem('superAdminTab', activeTab); }, [activeTab]);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  // TAMBAHAN: Masukkan 'lead' (leaderboard) ke dalam state untuk rekap nilai master
   const [data, setData] = useState({ users: [], live: [], bank: [], sessions: [], lead: [] });
   
   const [filterGuru, setFilterGuru] = useState('');
@@ -40,7 +39,6 @@ export default function SuperAdminDashboard({ onLogout }) {
     fetchData('live_students', 'live');
     fetchData('bank_soal', 'bank');
     fetchData('exam_sessions', 'sessions');
-    // TAMBAHAN: Tarik data nilai siswa ke Dasbor Pusat
     fetchData('leaderboard', 'lead'); 
   }, []);
 
@@ -69,6 +67,18 @@ export default function SuperAdminDashboard({ onLogout }) {
   };
   const handleUpdateGuru = (e) => { e.preventDefault(); update(ref(db, `users/${editGuruId}`), { name: guruFormData.name, email: guruFormData.email }); alert("Data Guru Diperbarui!"); setShowGuruModal(false); };
 
+  // ==========================================
+  // FITUR BARU: RESET PASSWORD GURU
+  // ==========================================
+  const handleResetPassword = (email) => {
+    if (window.confirm(`Kirim instruksi reset kata sandi ke email: ${email}?\n\nGuru tersebut akan menerima link resmi dari sistem untuk membuat sandi baru.`)) {
+      sendPasswordResetEmail(auth, email)
+        .then(() => alert("✅ Link Reset Sandi Berhasil Dikirim!\nSilakan minta Guru tersebut mengecek kotak masuk (atau folder spam) di email mereka."))
+        .catch((error) => alert("❌ Gagal Mengirim: " + error.message));
+    }
+  };
+  // ==========================================
+
   const handleManualAddGuru = (e) => {
     e.preventDefault();
     const cleanId = guruFormData.email.replace(/[^a-zA-Z0-9]/g, '');
@@ -82,9 +92,6 @@ export default function SuperAdminDashboard({ onLogout }) {
   const openEditSoalModal = (q) => { setSoalFormData({ mapel: q?.mapel||'', kelas: q?.kelas||'', pertanyaan: q?.pertanyaan||'', opsiA: q?.opsiA||'', opsiB: q?.opsiB||'', opsiC: q?.opsiC||'', opsiD: q?.opsiD||'', kunci: q?.kunci||'A' }); setEditSoalId(q.id); setShowSoalModal(true); };
   const handleUpdateSoal = (e) => { e.preventDefault(); update(ref(db, `bank_soal/${editSoalId}`), { ...soalFormData }); alert("Soal berhasil dimodifikasi oleh Admin!"); setShowSoalModal(false); };
 
-  // ==========================================
-  // FITUR BARU: PUSAT KENDALI (DANGER ZONE)
-  // ==========================================
   const resetLiveStudents = () => {
     if(window.confirm("🚨 PERINGATAN BAHAYA!\nSemua data siswa yang sedang Ujian/Live akan disapu bersih dari server. Pastikan tidak ada yang sedang ujian.\n\nLanjutkan?")) {
       remove(ref(db, 'live_students'));
@@ -99,7 +106,6 @@ export default function SuperAdminDashboard({ onLogout }) {
     }
   };
   
-  // FUNGSI BARU: BERSIHKAN REKAP NILAI
   const resetRekapNilai = () => {
     if(window.confirm("🚨 KONFIRMASI PENGHAPUSAN!\nPastikan Anda sudah men-download Rekap Master (Excel) sebelum melakukan ini.\n\nSemua data nilai saat ini akan dihapus permanen untuk mempersiapkan database bagi jadwal ujian selanjutnya.\n\nLanjutkan bersihkan rekap nilai?")) {
       remove(ref(db, 'leaderboard'));
@@ -115,12 +121,11 @@ export default function SuperAdminDashboard({ onLogout }) {
       const ws = XLSX.utils.json_to_sheet(data.lead);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Rekap Master");
-      XLSX.writeFile(wb, `MASTER_REKAP_CBT_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
+      XLSX.writeFile(wb, `MASTER_REKAP_CBT_DARMAPERTIWI_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
     } catch(err) {
       alert("Gagal mengunduh rekap master: " + err.message);
     }
   };
-  // ==========================================
 
   const NavItem = ({ tab, icon: Icon, label, badge }) => (
     <button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex justify-between items-center p-4 rounded-xl transition-all ${activeTab === tab ? 'bg-amber-500 text-black font-black shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:bg-slate-900 hover:text-white font-bold'}`}>
@@ -137,7 +142,7 @@ export default function SuperAdminDashboard({ onLogout }) {
         <div className="p-6 border-b border-slate-800 flex justify-between items-center"><h1 className="text-2xl font-black text-white flex gap-2 items-center tracking-widest"><Crown className="text-amber-500" size={28}/> PUSAT</h1><button className="md:hidden text-slate-500" onClick={() => setIsMobileMenuOpen(false)}><X size={24}/></button></div>
         <div className="p-6 border-b border-slate-800 bg-gradient-to-r from-slate-900 to-black">
           <p className="text-xs font-black text-amber-500 uppercase tracking-widest mb-1">Otoritas Tertinggi</p>
-          <p className="text-sm font-bold truncate text-white">Administrator Sekolah</p>
+          <p className="text-sm font-bold truncate text-white uppercase">Administrator Utama</p>
         </div>
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           <NavItem tab="radar" icon={Activity} label="Radar Aktivitas" />
@@ -148,24 +153,33 @@ export default function SuperAdminDashboard({ onLogout }) {
       </aside>
       
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-[#0a0f1c]">
+        {/* HEADER DIPERBARUI DENGAN BRANDING SEKOLAH */}
         <header className="bg-slate-900 border-b border-slate-800 p-4 lg:p-6 flex justify-between items-center shadow-lg z-10">
           <div className="flex items-center gap-4">
             <button className="md:hidden p-2 bg-slate-800 rounded-lg text-amber-500" onClick={() => setIsMobileMenuOpen(true)}><Menu size={24}/></button>
-            <h2 className="text-xl lg:text-2xl font-black text-white hidden sm:block tracking-wide">COMMAND CENTER</h2>
+            <div className="flex items-center gap-3">
+               <div className="p-2 bg-amber-500/10 rounded-xl border border-amber-500/20 hidden sm:block">
+                  <Landmark size={24} className="text-amber-500" />
+               </div>
+               <div className="hidden sm:block">
+                  <h2 className="text-sm font-black text-white leading-tight tracking-widest uppercase">YASPENDIK PTP NUSANTARA IV</h2>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">SMP/MTS DARMA PERTIWI BAH BUTONG</p>
+               </div>
+               <h2 className="text-xl font-black text-white sm:hidden tracking-wider">COMMAND CENTER</h2>
+            </div>
           </div>
           <div className="flex items-center gap-3 bg-amber-500/10 px-4 py-2 rounded-full border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
-            <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></div><span className="text-xs font-black text-amber-500 uppercase tracking-widest">Sistem Aktif</span>
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></div><span className="text-xs font-black text-amber-500 uppercase tracking-widest">Server Aktif</span>
           </div>
         </header>
         
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
           
-          {/* TAB RADAR (UI BARU DENGAN DANGER ZONE) */}
+          {/* TAB RADAR */}
           {activeTab === 'radar' && (
             <div className="space-y-6 max-w-6xl mx-auto">
               <h3 className="text-2xl font-black text-white mb-6 flex items-center gap-3"><Activity className="text-amber-500"/> Radar Aktivitas Global</h3>
               
-              {/* STATISTIK 4 PILAR (Diperbarui) */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-slate-900 p-5 lg:p-6 rounded-3xl border border-slate-800 border-b-4 border-b-amber-500 shadow-xl relative overflow-hidden">
                   <div className="absolute -right-4 -bottom-4 opacity-5"><Users size={80}/></div>
@@ -189,7 +203,6 @@ export default function SuperAdminDashboard({ onLogout }) {
                 </div>
               </div>
 
-              {/* PUSAT KENDALI DATA (DANGER ZONE) */}
               <div className="mt-8 bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl">
                 <h4 className="text-amber-500 font-black text-sm uppercase mb-4 tracking-widest flex items-center gap-2"><Settings size={18}/> Pusat Kendali Data</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -200,7 +213,6 @@ export default function SuperAdminDashboard({ onLogout }) {
                 </div>
               </div>
 
-              {/* DAFTAR SESI BERJALAN */}
               <div className="mt-8 space-y-4">
                 <h4 className="font-bold text-white text-lg border-b border-slate-800 pb-3 flex items-center gap-2"><Lock size={18} className="text-amber-500"/> Sesi Berjalan Aktif ({activeSessions.length})</h4>
                 {activeSessions.length === 0 ? (
@@ -298,14 +310,16 @@ export default function SuperAdminDashboard({ onLogout }) {
                           <div className="w-14 h-14 shrink-0 bg-slate-800 text-amber-500 rounded-full flex items-center justify-center font-black text-2xl uppercase border border-slate-700 shadow-inner">
                             {t?.name ? t.name.charAt(0) : 'G'}
                           </div>
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <p className="font-black text-white text-lg truncate">{t?.name || 'Guru Tanpa Nama'}</p>
                             <p className="font-medium text-slate-400 text-sm truncate">{t?.email || 'Email tidak tersedia'}</p>
                           </div>
                         </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => openEditGuruModal(t)} className="flex-1 flex items-center justify-center text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white px-4 py-3 rounded-xl transition-all shadow-sm active:scale-95 border border-slate-700"><UserCog size={18}/></button>
-                          <button onClick={() => deleteTeacher(t.id)} className="flex-1 flex items-center justify-center text-red-500 bg-red-950/20 hover:bg-red-900 hover:text-white px-4 py-3 rounded-xl transition-all shadow-sm active:scale-95 border border-red-900/30"><Trash2 size={18}/></button>
+                        <div className="grid grid-cols-3 gap-2">
+                          <button onClick={() => openEditGuruModal(t)} title="Edit Nama" className="flex items-center justify-center text-slate-300 bg-slate-800 hover:bg-slate-700 p-3 rounded-xl transition-all shadow-sm active:scale-95 border border-slate-700"><UserCog size={18}/></button>
+                          {/* TOMBOL RESET PASSWORD GURU */}
+                          <button onClick={() => handleResetPassword(t.email)} title="Reset Password" className="flex items-center justify-center text-amber-500 bg-amber-950/20 hover:bg-amber-600 hover:text-white p-3 rounded-xl transition-all shadow-sm active:scale-95 border border-amber-900/30"><KeyRound size={18}/></button>
+                          <button onClick={() => deleteTeacher(t.id)} title="Hapus Guru" className="flex items-center justify-center text-red-500 bg-red-950/20 hover:bg-red-900 hover:text-white p-3 rounded-xl transition-all shadow-sm active:scale-95 border border-red-900/30"><Trash2 size={18}/></button>
                         </div>
                       </div>
                     ))}
@@ -324,7 +338,7 @@ export default function SuperAdminDashboard({ onLogout }) {
             <h2 className="text-xl font-black mb-6 text-white flex items-center gap-3"><UserCog className="text-amber-500"/> Modifikasi Data Personalia</h2>
             <form onSubmit={handleUpdateGuru} className="space-y-5">
               <div><label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Nama Lengkap & Gelar</label><input required value={guruFormData.name} className="w-full p-4 bg-slate-950 border border-slate-800 rounded-2xl outline-none focus:border-amber-500 font-bold text-white shadow-inner" onChange={e => setGuruFormData({...guruFormData, name: e.target.value})} /></div>
-              <div><label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Email Akun (Info Saja)</label><input required value={guruFormData.email} type="email" className="w-full p-4 bg-slate-950 border border-slate-800 rounded-2xl outline-none focus:border-amber-500 font-bold text-white shadow-inner" onChange={e => setGuruFormData({...guruFormData, email: e.target.value})} /></div>
+              <div><label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Email Akun (Info Saja)</label><input disabled value={guruFormData.email} className="w-full p-4 bg-slate-900/50 border border-slate-800 rounded-2xl font-bold text-slate-500 cursor-not-allowed" /></div>
               <div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowGuruModal(false)} className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold active:scale-95 transition-all">Batal</button><button type="submit" className="flex-1 py-4 bg-amber-500 hover:bg-amber-400 text-black rounded-2xl font-black shadow-[0_0_15px_rgba(245,158,11,0.2)] active:scale-95 transition-all">Simpan Revisi</button></div>
             </form>
           </div>
@@ -336,10 +350,10 @@ export default function SuperAdminDashboard({ onLogout }) {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[120]">
           <div className="bg-slate-900 p-6 md:p-8 rounded-3xl w-full max-w-md shadow-2xl border border-slate-800">
             <h2 className="text-xl font-black mb-2 text-white flex items-center gap-3"><Plus className="text-amber-500"/> Registrasi Paksa</h2>
-            <p className="text-sm text-slate-400 mb-6 leading-relaxed">Gunakan perintah ini untuk menyuntikkan data guru lama langsung ke inti database.</p>
+            <p className="text-sm text-slate-400 mb-6 leading-relaxed">Instruksi ini akan menyuntikkan data guru langsung ke database pusat.</p>
             <form onSubmit={handleManualAddGuru} className="space-y-5">
-              <div><label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Nama Lengkap Guru</label><input required value={guruFormData.name} placeholder="Bpk. Suryanto Siregar" className="w-full p-4 bg-slate-950 border border-slate-800 rounded-2xl outline-none focus:border-amber-500 font-bold text-white" onChange={e => setGuruFormData({...guruFormData, name: e.target.value})} /></div>
-              <div><label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Email Terdaftar</label><input required value={guruFormData.email} type="email" placeholder="suryanto@guru.com" className="w-full p-4 bg-slate-950 border border-slate-800 rounded-2xl outline-none focus:border-amber-500 font-bold text-white" onChange={e => setGuruFormData({...guruFormData, email: e.target.value})} /></div>
+              <div><label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Nama Lengkap Guru</label><input required value={guruFormData.name} placeholder="Bpk. Suryanto Siregar" className="w-full p-4 bg-slate-950 border border-slate-800 rounded-2xl outline-none focus:border-amber-500 font-bold text-white shadow-inner" onChange={e => setGuruFormData({...guruFormData, name: e.target.value})} /></div>
+              <div><label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Email Terdaftar</label><input required value={guruFormData.email} type="email" placeholder="suryanto@guru.com" className="w-full p-4 bg-slate-950 border border-slate-800 rounded-2xl outline-none focus:border-amber-500 font-bold text-white shadow-inner" onChange={e => setGuruFormData({...guruFormData, email: e.target.value})} /></div>
               <div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowAddGuruModal(false)} className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-bold active:scale-95">Batalkan</button><button type="submit" className="flex-1 py-4 bg-amber-500 text-black rounded-2xl font-black active:scale-95 shadow-[0_0_15px_rgba(245,158,11,0.2)]">Suntik Data</button></div>
             </form>
           </div>
