@@ -4,7 +4,8 @@ import { ref as dbRef, onValue, push, remove, update } from 'firebase/database';
 import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
-import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList } from 'lucide-react';
+// PERBAIKAN IKON: Menggunakan ShieldAlert alih-alih CheckSquare
+import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert } from 'lucide-react';
 
 export default function TeacherDashboard({ onLogout }) {
   const [activeTab, setActiveTab] = useState(localStorage.getItem('teacherTab') || 'settings');
@@ -17,7 +18,7 @@ export default function TeacherDashboard({ onLogout }) {
   
   const currentUserEmail = auth.currentUser?.email || 'guru@unknown.com';
   const [teacherProfile, setTeacherProfile] = useState({ name: 'Memuat...', email: currentUserEmail });
-  const [tempProfileName, setTempProfileName] = useState(''); // Untuk form edit profil
+  const [tempProfileName, setTempProfileName] = useState(''); 
   
   const fileInputRef = useRef(null);
 
@@ -28,8 +29,8 @@ export default function TeacherDashboard({ onLogout }) {
   const [recapKelas, setRecapKelas] = useState('');
   const [recapSubKelas, setRecapSubKelas] = useState('');
   
-  const [broadcastText, setBroadcastText] = useState(''); // Untuk fitur broadcast
-  const [printMode, setPrintMode] = useState('rekap'); // 'rekap', 'berita_acara', 'daftar_hadir'
+  const [broadcastText, setBroadcastText] = useState(''); 
+  const [printMode, setPrintMode] = useState('rekap'); 
 
   const defaultForm = { mapel: '', kelas: '', pertanyaan: '', opsiA: '', opsiB: '', opsiC: '', opsiD: '', kunci: 'A' };
   const [formData, setFormData] = useState(defaultForm);
@@ -72,9 +73,6 @@ export default function TeacherDashboard({ onLogout }) {
   const availableRecapSubKelas = [...new Set(myLeaderboard.map(s => s?.subKelas).filter(Boolean))];
   const filteredLeaderboard = myLeaderboard.filter(s => (recapMapel === '' || s?.mapel === recapMapel) && (recapKelas === '' || s?.class === recapKelas) && (recapSubKelas === '' || s?.subKelas === recapSubKelas));
 
-  // ==================== FUNGSI BARU (V1.2) ====================
-  
-  // 1. UPDATE PROFIL GURU
   const handleUpdateProfile = (e) => {
     e.preventDefault();
     if(auth.currentUser) {
@@ -83,7 +81,6 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
-  // 2. BROADCAST PESAN KE SISWA
   const sendBroadcast = () => {
     if(!broadcastText) return;
     if(window.confirm(`Kirim pengumuman darurat ke semua siswa di Ruang Ujian (Token: ${activeMonitorToken})?`)) {
@@ -95,7 +92,6 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
-  // 3. TARIK JAWABAN MASSAL (FORCE SUBMIT ALL)
   const forceSubmitAll = () => {
     if(window.confirm("🚨 PERINGATAN!\nTarik paksa semua lembar jawaban siswa yang sedang online di sesi ini? Waktu ujian mereka akan langsung berakhir.")) {
       monitoredStudents.forEach(s => {
@@ -107,15 +103,12 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
-  // 4. HAPUS REKAP NILAI MANDIRI
   const handleDeleteMyRecap = () => {
     if(window.confirm("Hapus SEMUA rekap nilai siswa yang tersimpan untuk mata pelajaran Anda?\n(Data guru lain tidak akan terpengaruh).")) {
       myLeaderboard.forEach(s => remove(dbRef(db, `leaderboard/${s.id}`)));
       alert("Data nilai Anda berhasil dibersihkan dari server.");
     }
   };
-
-  // ==========================================================
 
   const handleAddOrEditSoal = (e) => { 
     e.preventDefault(); 
@@ -146,13 +139,12 @@ export default function TeacherDashboard({ onLogout }) {
 
   const NavItem = ({ tab, icon: Icon, label }) => (<button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-4 rounded-xl transition-all ${activeTab === tab ? 'bg-emerald-600 text-white font-black shadow-lg shadow-emerald-600/30' : 'text-slate-500 hover:bg-slate-100 font-bold'}`}><Icon size={20}/> <span>{label}</span></button>);
 
-  // KOP SURAT RESMI YAYASAN UNTUK CETAK
   const OfficialHeader = () => (
     <div className="hidden print:block text-center mb-8 border-b-4 border-double border-black pb-4">
       <h1 className="text-2xl font-black uppercase tracking-widest text-black">YASPENDIK PTP NUSANTARA IV</h1>
       <h2 className="text-xl font-black uppercase tracking-widest text-black mt-1">SMP/MTS DARMA PERTIWI BAH BUTONG</h2>
       <p className="mt-2 text-sm font-bold text-gray-800">
-        Dokumen Resmi Ujian Berbasis Komputer (CBT)
+        Dokumen Resmi Administrasi Ujian Berbasis Komputer (CBT)
       </p>
     </div>
   );
@@ -214,7 +206,10 @@ export default function TeacherDashboard({ onLogout }) {
                 <h3 className="text-xl font-black mb-6 text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4"><Plus className="text-emerald-500"/> Buka Sesi Baru</h3>
                 <form onSubmit={handleCreateSession} className="space-y-5">
                   <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Pilih Mata Pelajaran</label><select value={selectedMapelSesi} onChange={(e) => setSelectedMapelSesi(e.target.value)} required className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none font-bold text-slate-700 focus:border-emerald-500 focus:bg-white transition-colors cursor-pointer"><option value="">-- Daftar Mapel --</option>{availableMapel.map(m => <option key={m}>{m}</option>)}</select></div>
-                  <div className="flex gap-3"><div className="flex-1"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Tingkat</label><select id="kelas_session" required disabled={!selectedMapelSesi} className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none font-bold text-slate-700 focus:border-emerald-500 focus:bg-white cursor-pointer"><option value="">Pilih</option>{availableKelasSesi.map(k => <option key={k}>{k}</option>)}</select></div><div className="flex-1"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Ruang / Sub</label><input id="subkelas_session" placeholder="Cth: A" required className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl uppercase font-bold text-center focus:border-emerald-500 focus:bg-white transition-colors" /></div></div>
+                  <div className="grid grid-cols-2 gap-3">
+                     <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Tingkat</label><select id="kelas_session" required disabled={!selectedMapelSesi} className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none font-bold text-slate-700 focus:border-emerald-500 focus:bg-white cursor-pointer"><option value="">Pilih</option>{availableKelasSesi.map(k => <option key={k}>{k}</option>)}</select></div>
+                     <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Ruang / Sub</label><input id="subkelas_session" placeholder="Cth: A" required className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl uppercase font-bold text-center focus:border-emerald-500 focus:bg-white transition-colors" /></div>
+                  </div>
                   <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Token Akses Ujian</label><div className="flex gap-2"><input id="token_input" required placeholder="Generate..." className="w-full p-4 border border-emerald-200 bg-emerald-50 rounded-2xl uppercase font-mono font-black tracking-widest text-emerald-800 outline-none" /><button type="button" onClick={() => document.getElementById('token_input').value = Math.random().toString(36).substring(2,7).toUpperCase()} className="p-4 bg-slate-800 text-white hover:bg-slate-700 rounded-2xl active:scale-95 transition-transform shadow-md"><Dices size={24}/></button></div></div>
                   <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 mt-4 rounded-2xl font-black shadow-lg shadow-emerald-600/30 active:scale-95 transition-all tracking-widest">RILIS UJIAN</button>
                 </form>
@@ -251,7 +246,7 @@ export default function TeacherDashboard({ onLogout }) {
             </div>
           )}
 
-          {/* TAB MONITOR (DENGAN BROADCAST & FORCE SUBMIT ALL) */}
+          {/* TAB MONITOR */}
           {activeTab === 'proctor' && (
             <div className="space-y-6 max-w-6xl mx-auto">
               <div className="bg-white border border-slate-200 p-5 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
@@ -266,11 +261,11 @@ export default function TeacherDashboard({ onLogout }) {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-white p-5 rounded-3xl border-l-4 border-l-blue-500 shadow-sm"><p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-wider">Terhubung</p><p className="text-4xl font-black text-slate-800">{monitoredStudents.length}</p></div>
                     <div className="bg-white p-5 rounded-3xl border-l-4 border-l-emerald-500 shadow-sm"><p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-wider">Selesai</p><p className="text-4xl font-black text-emerald-600">{monitoredStudents.filter(s => s.status === 'Selesai').length}</p></div>
-                    <div className="bg-white p-5 rounded-3xl border-l-4 border-l-red-500 shadow-sm"><p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-wider">Curang</p><p className="text-4xl font-black text-red-600">{monitoredStudents.filter(s => s.warnings > 0).length}</p></div>
+                    <div className="bg-white p-5 rounded-3xl border-l-4 border-l-red-500 shadow-sm"><p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-wider">Curang</p><p className="text-4xl font-black text-red-600">{monitoredStudents.filter(s => (s?.warnings || 0) > 0).length}</p></div>
                     <div className="bg-slate-900 p-5 rounded-3xl flex flex-col justify-center items-center shadow-lg border border-slate-800">
-                       {/* TOMBOL SAKTI: TARIK MASSAL */}
+                       {/* PERBAIKAN IKON: Menggunakan ShieldAlert */}
                        <button onClick={forceSubmitAll} className="w-full h-full bg-red-600 hover:bg-red-500 text-white rounded-xl font-black flex items-center justify-center gap-2 active:scale-95 transition-all flex-col p-2 text-center shadow-lg shadow-red-600/30">
-                          <CheckSquare size={24} className="mb-1" /> Tarik Paksa Semua
+                          <ShieldAlert size={24} className="mb-1" /> Tarik Paksa Semua
                        </button>
                     </div>
                   </div>
@@ -291,17 +286,19 @@ export default function TeacherDashboard({ onLogout }) {
                             <p className="font-black text-slate-800 text-lg leading-tight truncate">{s?.name || '-'}</p>
                             <span className="inline-block mt-1 bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold border border-slate-200">{s?.class}-{s?.subKelas}</span>
                           </div>
-                          {s?.warnings > 0 && <span className="bg-red-50 text-red-600 text-xs font-black px-2 py-1 rounded border border-red-200 animate-pulse whitespace-nowrap">(!Tab {s.warnings}x)</span>}
+                          {/* PERBAIKAN LOGIKA WARNINGS */}
+                          {(s?.warnings || 0) > 0 && <span className="bg-red-50 text-red-600 text-xs font-black px-2 py-1 rounded border border-red-200 animate-pulse whitespace-nowrap">(!Tab {s.warnings}x)</span>}
                         </div>
                         
                         <div>
-                          <div className="flex justify-between text-xs font-bold text-slate-500 mb-2"><span>Progress Ujian</span><span className="text-emerald-600">{s?.progress}%</span></div>
-                          <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden shadow-inner"><div className="bg-emerald-500 h-full transition-all duration-500" style={{width:`${s?.progress}%`}}></div></div>
+                          {/* PERBAIKAN PROGRESS BAR (Mencegah WSOD) */}
+                          <div className="flex justify-between text-xs font-bold text-slate-500 mb-2"><span>Progress Ujian</span><span className="text-emerald-600">{s?.progress || 0}%</span></div>
+                          <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden shadow-inner"><div className="bg-emerald-500 h-full transition-all duration-500" style={{width:`${s?.progress || 0}%`}}></div></div>
                         </div>
 
                         <div className="flex gap-2 pt-2 border-t border-slate-100 mt-1">
                           <button onClick={() => update(dbRef(db, `live_students/${s.id}`), { forceSubmit: true })} disabled={s.status === 'Selesai'} className="flex-1 text-xs bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 py-3 rounded-xl font-bold disabled:opacity-50 active:scale-95 transition-all shadow-sm">Tarik Mandiri</button>
-                          {s?.warnings >= 3 && s?.status !== 'Selesai' && (
+                          {(s?.warnings || 0) >= 3 && s?.status !== 'Selesai' && (
                             <button onClick={() => update(dbRef(db, `live_students/${s.id}`), { warnings: 0, status: 'Online' })} className="flex-1 text-xs bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 py-3 rounded-xl font-bold active:scale-95 transition-all shadow-sm">Buka Kunci</button>
                           )}
                         </div>
@@ -321,19 +318,20 @@ export default function TeacherDashboard({ onLogout }) {
               
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 print:hidden space-y-5">
                 <h3 className="text-xl font-black mb-2 text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4"><BookOpen className="text-emerald-500"/> Manajemen Bank Soal</h3>
-                <div className="flex flex-col sm:flex-row gap-4 pt-2">
-                  <select value={bankMapel} onChange={e => setBankMapel(e.target.value)} className="flex-1 p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Mata Pelajaran --</option>{availableBankMapel.map(m => <option key={m}>{m}</option>)}</select>
-                  <select value={bankKelas} onChange={e => setBankKelas(e.target.value)} className="flex-1 p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Tingkatan Kelas --</option>{availableBankKelas.map(k => <option key={k}>{k}</option>)}</select>
+                
+                {/* CSS GRID untuk dropdown agar rata */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  <select value={bankMapel} onChange={e => setBankMapel(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Mata Pelajaran --</option>{availableBankMapel.map(m => <option key={m}>{m}</option>)}</select>
+                  <select value={bankKelas} onChange={e => setBankKelas(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Tingkatan Kelas --</option>{availableBankKelas.map(k => <option key={k}>{k}</option>)}</select>
                 </div>
                 
-                <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-100">
-                  <button onClick={downloadTemplate} className="flex-1 sm:flex-none bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-5 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 shadow-sm transition-colors"><Download size={18}/> Template Excel</button>
-                  <button onClick={triggerImport} className="flex-1 sm:flex-none bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 px-5 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 shadow-sm transition-colors"><Upload size={18}/> Import Excel</button>
-                  <button onClick={() => { setEditSoalId(null); setFormData(defaultForm); setShowModal(true); }} className="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-white px-6 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 ml-auto transition-colors"><Plus size={18}/> Ketik Soal Manual</button>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4 border-t border-slate-100">
+                  <button onClick={downloadTemplate} className="w-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 p-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 shadow-sm transition-colors"><Download size={18}/> Template Excel</button>
+                  <button onClick={triggerImport} className="w-full bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 p-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 shadow-sm transition-colors"><Upload size={18}/> Import Excel</button>
+                  <button onClick={() => { setEditSoalId(null); setFormData(defaultForm); setShowModal(true); }} className="w-full bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-colors"><Plus size={18}/> Ketik Manual</button>
                 </div>
               </div>
 
-              {/* TAMPILAN CETAK SOAL */}
               <div className="hidden print:block text-center mb-8 border-b-4 border-double border-black pb-4">
                 <h1 className="text-2xl font-black uppercase tracking-widest text-black">YASPENDIK PTP NUSANTARA IV</h1>
                 <h2 className="text-xl font-black uppercase tracking-widest text-black mt-1">SMP/MTS DARMA PERTIWI BAH BUTONG</h2>
@@ -368,22 +366,22 @@ export default function TeacherDashboard({ onLogout }) {
           {activeTab === 'recap' && (
             <div className="space-y-6 max-w-6xl mx-auto print:max-w-full">
               <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 print:hidden space-y-5">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
                   <h3 className="text-xl font-black text-slate-800 flex items-center gap-3"><ClipboardList className="text-emerald-500"/> Pusat Administrasi Ujian</h3>
-                  <button onClick={handleDeleteMyRecap} className="w-full sm:w-auto bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-colors shadow-sm"><Trash2 size={18}/> Bersihkan Nilai Saya</button>
+                  <button onClick={handleDeleteMyRecap} className="w-full md:w-auto bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-colors shadow-sm"><Trash2 size={18}/> Bersihkan Nilai Saya</button>
                 </div>
                 
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <select value={recapMapel} onChange={e => setRecapMapel(e.target.value)} className="flex-1 p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Mata Pelajaran --</option>{availableRecapMapel.map(m => <option key={m}>{m}</option>)}</select>
-                  <select value={recapKelas} onChange={e => setRecapKelas(e.target.value)} className="flex-1 p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Tingkatan --</option>{availableRecapKelas.map(k => <option key={k}>{k}</option>)}</select>
-                  <select value={recapSubKelas} onChange={e => setRecapSubKelas(e.target.value)} className="flex-1 p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Ruangan --</option>{availableRecapSubKelas.map(sk => <option key={sk}>{sk}</option>)}</select>
+                {/* CSS GRID agar kolom tidak tumpang tindih / lari */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <select value={recapMapel} onChange={e => setRecapMapel(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Mapel --</option>{availableRecapMapel.map(m => <option key={m}>{m}</option>)}</select>
+                  <select value={recapKelas} onChange={e => setRecapKelas(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Tingkatan --</option>{availableRecapKelas.map(k => <option key={k}>{k}</option>)}</select>
+                  <select value={recapSubKelas} onChange={e => setRecapSubKelas(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Ruangan --</option>{availableRecapSubKelas.map(sk => <option key={sk}>{sk}</option>)}</select>
                 </div>
                 
-                {/* TOMBOL CETAK DOKUMEN RESMI */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-slate-100">
-                  <button onClick={() => { setPrintMode('rekap'); setTimeout(() => window.print(), 300); }} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><BarChart size={18}/> Cetak Daftar Nilai</button>
-                  <button onClick={() => { setPrintMode('berita_acara'); setTimeout(() => window.print(), 300); }} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95 transition-all"><FileText size={18}/> Berita Acara Ujian</button>
-                  <button onClick={() => { setPrintMode('daftar_hadir'); setTimeout(() => window.print(), 300); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"><Users size={18}/> Daftar Hadir Siswa</button>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4 border-t border-slate-100">
+                  <button onClick={() => { setPrintMode('rekap'); setTimeout(() => window.print(), 300); }} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all tracking-wide"><BarChart size={18}/> Cetak Daftar Nilai</button>
+                  <button onClick={() => { setPrintMode('berita_acara'); setTimeout(() => window.print(), 300); }} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all"><FileText size={18}/> Berita Acara Ujian</button>
+                  <button onClick={() => { setPrintMode('daftar_hadir'); setTimeout(() => window.print(), 300); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all"><Users size={18}/> Daftar Hadir Siswa</button>
                 </div>
               </div>
               
@@ -505,9 +503,9 @@ export default function TeacherDashboard({ onLogout }) {
           <div className="bg-white p-6 md:p-8 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100">
             <h2 className="text-xl font-black mb-6 text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4"><Edit className="text-emerald-500"/> {editSoalId ? 'Revisi Soal Ujian' : 'Ketik Soal Baru'}</h2>
             <form onSubmit={handleAddOrEditSoal} className="space-y-5">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Mata Pelajaran</label><input required value={formData.mapel} placeholder="Contoh: Matematika" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, mapel: e.target.value})} /></div>
-                <div className="sm:w-1/3"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Tingkat</label><input required value={formData.kelas} placeholder="Cth: 9" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 text-center focus:bg-white" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Mata Pelajaran</label><input required value={formData.mapel} placeholder="Contoh: Matematika" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, mapel: e.target.value})} /></div>
+                <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Tingkat</label><input required value={formData.kelas} placeholder="Cth: 9" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 text-center focus:bg-white" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
               </div>
               
               <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Teks Pertanyaan (Gunakan $...$ untuk Rumus Math)</label><textarea required value={formData.pertanyaan} placeholder="Ketik soal di sini..." className="w-full p-5 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 min-h-[120px] leading-relaxed text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, pertanyaan: e.target.value})} /></div>
@@ -516,9 +514,9 @@ export default function TeacherDashboard({ onLogout }) {
               
               <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Kunci Jawaban Benar</label><select className="w-full p-4 border border-emerald-300 bg-emerald-50 text-emerald-800 font-black rounded-2xl outline-none cursor-pointer focus:border-emerald-500" value={formData.kunci} onChange={e => setFormData({...formData, kunci: e.target.value})}><option value="A">Opsi A</option><option value="B">Opsi B</option><option value="C">Opsi C</option><option value="D">Opsi D</option></select></div>
               
-              <div className="flex gap-3 pt-4 border-t border-slate-100 mt-6">
-                <button type="button" onClick={() => { setShowModal(false); setEditSoalId(null); setFormData(defaultForm); }} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 rounded-2xl font-bold text-slate-600 active:scale-95 transition-colors cursor-pointer">Batalkan</button>
-                <button type="submit" className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black shadow-lg shadow-emerald-600/30 active:scale-95 transition-transform cursor-pointer">{editSoalId ? 'Simpan Revisi' : 'Tambahkan Soal'}</button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-slate-100 mt-6">
+                <button type="button" onClick={() => { setShowModal(false); setEditSoalId(null); setFormData(defaultForm); }} className="w-full py-4 bg-slate-100 hover:bg-slate-200 rounded-2xl font-bold text-slate-600 active:scale-95 transition-colors cursor-pointer">Batalkan</button>
+                <button type="submit" className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black shadow-lg shadow-emerald-600/30 active:scale-95 transition-transform cursor-pointer">{editSoalId ? 'Simpan Revisi' : 'Tambahkan Soal'}</button>
               </div>
             </form>
           </div>
