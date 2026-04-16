@@ -27,15 +27,38 @@ export default function ExamRoom({ studentData, onFinish }) {
 
   useEffect(() => { answersRef.current = answers; }, [answers]);
 
+  // ==========================================
+  // FITUR BARU: TARIK & ACAK SOAL (SHUFFLE)
+  // ==========================================
   useEffect(() => {
     onValue(ref(db, 'bank_soal'), (snap) => {
       if (snap.val()) {
         const allQ = Object.keys(snap.val()).map(k => ({ id: k, ...snap.val()[k] }));
         const filtered = allQ.filter(q => q.mapel === studentData?.mapel && q.kelas === studentData?.class && q.teacherEmail === studentData?.teacherEmail);
-        setQuestions(filtered);
+        
+        const savedOrder = localStorage.getItem(`${storageKey}_order`);
+        let finalQuestions = [];
+
+        if (savedOrder) {
+          // Jika sudah punya urutan sebelumnya, pakai urutan itu (biar gak rubah saat refresh)
+          const orderIds = JSON.parse(savedOrder);
+          finalQuestions = orderIds.map(id => filtered.find(q => q.id === id)).filter(Boolean);
+          
+          // Jaga-jaga kalau guru nambah soal baru di tengah jalan
+          const newQuestions = filtered.filter(q => !orderIds.includes(q.id));
+          finalQuestions = [...finalQuestions, ...newQuestions];
+        } else {
+          // Jika baru pertama kali masuk, ACAK SOALNYA
+          finalQuestions = [...filtered].sort(() => Math.random() - 0.5);
+          const orderIds = finalQuestions.map(q => q.id);
+          localStorage.setItem(`${storageKey}_order`, JSON.stringify(orderIds));
+        }
+        
+        setQuestions(finalQuestions);
       }
     });
-  }, [studentData]);
+  }, [studentData, storageKey]);
+  // ==========================================
 
   useEffect(() => {
     if (!sid || sid === 'guest') return;
@@ -138,9 +161,13 @@ export default function ExamRoom({ studentData, onFinish }) {
     await push(ref(db, 'leaderboard'), { ...studentData, score, timestamp: Date.now() });
     await update(ref(db, `live_students/${sid}`), { status: 'Selesai' });
     
-    localStorage.removeItem(`${storageKey}_ans`); localStorage.removeItem(`${storageKey}_ragu`);
-    localStorage.removeItem(`${storageKey}_time`); localStorage.removeItem(`${storageKey}_warn`);
+    // BERSIIHKAN MEMORI TERMASUK URUTAN ACAK
+    localStorage.removeItem(`${storageKey}_ans`); 
+    localStorage.removeItem(`${storageKey}_ragu`);
+    localStorage.removeItem(`${storageKey}_time`); 
+    localStorage.removeItem(`${storageKey}_warn`);
     localStorage.removeItem(`${storageKey}_lock`);
+    localStorage.removeItem(`${storageKey}_order`); // Hapus urutan soal
     
     if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
     onFinish(score);
