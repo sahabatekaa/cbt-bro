@@ -17,16 +17,16 @@ export default function ExamRoom({ studentData, onFinish }) {
   const [timeLeft, setTimeLeft] = useState(() => { const t = localStorage.getItem(`${storageKey}_time`); return t ? parseInt(t) : 3600; });
   const [warnings, setWarnings] = useState(() => parseInt(localStorage.getItem(`${storageKey}_warn`)) || 0);
   const [isLocked, setIsLocked] = useState(() => localStorage.getItem(`${storageKey}_lock`) === 'true');
-  const [isFullscreen, setIsFullscreen] = useState(true);
   
-  // STATE KEAMANAN BARU
+  const [isFullscreen, setIsFullscreen] = useState(true);
+  const [forceAllowFullscreen, setForceAllowFullscreen] = useState(false); // BYPASS EXAMBRO
+  
   const [shouldForceSubmit, setShouldForceSubmit] = useState(false);
   const [isBlurred, setIsBlurred] = useState(false);
   const answersRef = useRef(answers);
 
   useEffect(() => { answersRef.current = answers; }, [answers]);
 
-  // 1. TARIK SOAL
   useEffect(() => {
     onValue(ref(db, 'bank_soal'), (snap) => {
       if (snap.val()) {
@@ -37,7 +37,6 @@ export default function ExamRoom({ studentData, onFinish }) {
     });
   }, [studentData]);
 
-  // 2. LISTENER REMOTE CONTROL GURU
   useEffect(() => {
     if (!sid || sid === 'guest') return;
     const unsub = onValue(ref(db, `live_students/${sid}`), (snap) => {
@@ -54,28 +53,19 @@ export default function ExamRoom({ studentData, onFinish }) {
     return () => unsub();
   }, [sid, isLocked, storageKey]);
 
-  // 3. LAYER KEAMANAN: FULLSCREEN, BLUR & SPLIT SCREEN DETECTOR
   useEffect(() => {
-    // Deteksi Fullscreen
     const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
     
-    // Deteksi Pindah Tab (Layar Kabur & Peringatan)
     const handleVisibilityChange = () => { 
-      if(document.hidden && !isLocked) { 
-        triggerWarning("Meninggalkan Halaman/Aplikasi");
-      } 
+      if(document.hidden && !isLocked) triggerWarning("Meninggalkan Halaman/Aplikasi");
     };
 
-    // Deteksi Jendela Kehilangan Fokus (Cegah Screenshot / Tarik Menu HP)
     const handleBlur = () => { if(!isLocked) setIsBlurred(true); };
     const handleFocus = () => { setIsBlurred(false); };
 
-    // Deteksi Layar Belah (Split Screen) via Resize
     let lastHeight = window.innerHeight;
     const handleResize = () => {
       if (Math.abs(window.innerHeight - lastHeight) > 150 && !isLocked) {
-        // Jika layar menyusut drastis (biasanya karena split screen atau keyboard muncul)
-        // Kita paksa keluar fullscreen agar mereka sadar
         if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
         triggerWarning("Layar Belah / Perubahan Jendela Terdeteksi");
       }
@@ -99,7 +89,6 @@ export default function ExamRoom({ studentData, onFinish }) {
     };
   }, [warnings, isLocked]);
 
-  // Fungsi Pemicu Hukuman
   const triggerWarning = (reason) => {
     const newWarn = warnings + 1;
     setWarnings(newWarn);
@@ -109,16 +98,25 @@ export default function ExamRoom({ studentData, onFinish }) {
     alert(`PERINGATAN KECURANGAN ${newWarn}/3!\nPelanggaran: ${reason}`);
   };
 
-  const enterFullscreen = () => { document.documentElement.requestFullscreen().catch(e => console.log(e)); };
+  // LOGIKA BYPASS EXAMBRO
+  const enterFullscreen = () => { 
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(e => {
+        console.log("Bypass Exambro/WebView", e);
+        setForceAllowFullscreen(true); // Jika ditolak Exambro, langsung loloskan
+      });
+    } else {
+      setForceAllowFullscreen(true); // Loloskan untuk browser iOS lawas
+    }
+  };
 
-  // 4. TIMER & AUTO SUBMIT
   useEffect(() => {
-    if (timeLeft > 0 && !isLocked && questions.length > 0 && isFullscreen && !shouldForceSubmit) { 
+    if (timeLeft > 0 && !isLocked && questions.length > 0 && (isFullscreen || forceAllowFullscreen) && !shouldForceSubmit) { 
       const t = setTimeout(() => { setTimeLeft(timeLeft - 1); localStorage.setItem(`${storageKey}_time`, timeLeft - 1); }, 1000); 
       return () => clearTimeout(t); 
     } 
     else if ((timeLeft <= 0 || shouldForceSubmit) && questions.length > 0) submitExam();
-  }, [timeLeft, isLocked, questions, isFullscreen, shouldForceSubmit, storageKey]);
+  }, [timeLeft, isLocked, questions, isFullscreen, forceAllowFullscreen, shouldForceSubmit, storageKey]);
 
   const handleSelect = (qId, opt) => {
     const newAns = { ...answers, [qId]: opt }; 
@@ -148,7 +146,6 @@ export default function ExamRoom({ studentData, onFinish }) {
     onFinish(score);
   };
 
-  // KONDISI LAYAR TERKUNCI
   if (isLocked) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-red-50 p-6 text-center select-none">
@@ -160,36 +157,33 @@ export default function ExamRoom({ studentData, onFinish }) {
     );
   }
 
-  // KONDISI BUKAN FULLSCREEN
-  if (!isFullscreen && questions.length > 0) {
+  // TAMPILKAN TOMBOL MASUK JIKA BUKAN FULLSCREEN DAN BELUM DI-BYPASS EXAMBRO
+  if (!isFullscreen && !forceAllowFullscreen && questions.length > 0) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6 text-center select-none">
         <Maximize size={80} className="mb-6 text-emerald-400 animate-pulse" />
         <h1 className="text-2xl font-black mb-2">Mode Keamanan Aktif</h1>
-        <p className="text-gray-400 mb-8 max-w-md">Layar belah (Split Screen) dan Window Mode tidak diizinkan. Harap gunakan layar penuh.</p>
-        <button onClick={enterFullscreen} className="bg-emerald-600 hover:bg-emerald-500 px-8 py-4 rounded-2xl font-bold text-lg active:scale-95 transition-all">Masuk Layar Penuh</button>
+        <p className="text-gray-400 mb-8 max-w-md">Harap gunakan layar penuh untuk memulai. Jika Anda menggunakan Exambro, klik tombol di bawah untuk melanjutkan.</p>
+        <button onClick={enterFullscreen} className="bg-emerald-600 hover:bg-emerald-500 px-8 py-4 rounded-2xl font-bold text-lg active:scale-95 transition-all">Masuk Ujian / Lanjutkan</button>
       </div>
     );
   }
 
-  if (questions.length === 0) return <div className="h-screen flex items-center justify-center text-gray-400">Loading Soal...</div>;
+  if (questions.length === 0) return <div className="h-screen flex items-center justify-center text-gray-400 font-bold">Mengambil data soal...</div>;
 
   const q = questions[currentIndex];
 
   return (
     <div 
-      // BLOKIR COPY PASTE DAN KLIK KANAN DI SELURUH HALAMAN
       onCopy={(e) => { e.preventDefault(); alert("Copy dinonaktifkan!"); }} 
       onPaste={(e) => e.preventDefault()} 
       onContextMenu={(e) => e.preventDefault()} 
       className="min-h-screen bg-gray-50 p-4 md:p-6 font-sans pb-28 select-none relative overflow-hidden"
     >
-      {/* WATERMARK JEBAKAN (Identitas Siswa Tembus Pandang) */}
       <div className="pointer-events-none fixed inset-0 z-0 flex items-center justify-center opacity-[0.03] rotate-[-30deg] text-black font-black text-4xl whitespace-nowrap overflow-hidden">
-        {studentData?.name} - {studentData?.class} {studentData?.name} - {studentData?.class} {studentData?.name}
+        {studentData?.name} - {studentData?.class} {studentData?.name} - {studentData?.class}
       </div>
 
-      {/* FILTER BLUR KETIKA FOKUS HILANG (Mau Screenshot/Tarik Menu) */}
       <div className={`relative z-10 transition-all duration-200 ${isBlurred ? 'blur-xl grayscale' : ''}`}>
         
         <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-between items-center bg-white p-4 rounded-2xl shadow-sm mb-4 gap-3 border border-gray-100">
@@ -231,11 +225,10 @@ export default function ExamRoom({ studentData, onFinish }) {
 
       </div>
 
-      {/* OVERLAY PENGALIH PERHATIAN (Muncul saat Blur) */}
       {isBlurred && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-sm pointer-events-none">
           <div className="bg-white p-4 rounded-xl shadow-2xl flex items-center gap-3 animate-pulse border-2 border-red-500">
-            <ShieldAlert className="text-red-600"/> <span className="font-black text-red-600">Kehilangan Fokus! Layar Diblur.</span>
+            <ShieldAlert className="text-red-600"/> <span className="font-black text-red-600">Layar Kehilangan Fokus!</span>
           </div>
         </div>
       )}
