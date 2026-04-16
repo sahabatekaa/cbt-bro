@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { ref, onValue, update, push } from 'firebase/database';
-// PENTING: Tambahan ikon Landmark (Sekolah) dan Bell (Pengumuman)
 import { Timer, AlertTriangle, Book, ChevronLeft, ChevronRight, HelpCircle, Maximize, ShieldAlert, Landmark, Bell } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
@@ -20,12 +19,11 @@ export default function ExamRoom({ studentData, onFinish }) {
   const [isLocked, setIsLocked] = useState(() => localStorage.getItem(`${storageKey}_lock`) === 'true');
   
   const [isFullscreen, setIsFullscreen] = useState(true);
-  const [forceAllowFullscreen, setForceAllowFullscreen] = useState(false); // BYPASS EXAMBRO
+  const [forceAllowFullscreen, setForceAllowFullscreen] = useState(false); 
   
   const [shouldForceSubmit, setShouldForceSubmit] = useState(false);
   const [isBlurred, setIsBlurred] = useState(false);
   
-  // STATE BARU UNTUK FITUR BROADCAST PENGUMUMAN
   const [lastBroadcast, setLastBroadcast] = useState('');
   const [showBroadcast, setShowBroadcast] = useState(false);
 
@@ -33,9 +31,6 @@ export default function ExamRoom({ studentData, onFinish }) {
 
   useEffect(() => { answersRef.current = answers; }, [answers]);
 
-  // ==========================================
-  // FITUR: TARIK & ACAK SOAL (SHUFFLE)
-  // ==========================================
   useEffect(() => {
     onValue(ref(db, 'bank_soal'), (snap) => {
       if (snap.val()) {
@@ -61,26 +56,20 @@ export default function ExamRoom({ studentData, onFinish }) {
     });
   }, [studentData, storageKey]);
 
-  // ==========================================
-  // LISNETER FIREBASE (KUNCI, TARIK PAKSA, BROADCAST)
-  // ==========================================
   useEffect(() => {
     if (!sid || sid === 'guest') return;
     const unsub = onValue(ref(db, `live_students/${sid}`), (snap) => {
       if (snap.exists()) {
         const data = snap.val();
         
-        // Logika Buka Kunci
         if (data.warnings === 0 && isLocked) {
           setWarnings(0); setIsLocked(false);
           localStorage.setItem(`${storageKey}_warn`, 0); localStorage.setItem(`${storageKey}_lock`, 'false');
           alert("PEMBERITAHUAN!\nPengawas telah memberikan dispensasi. Layar Anda telah dibuka.");
         }
         
-        // Logika Tarik Paksa
         if (data.forceSubmit === true) setShouldForceSubmit(true);
 
-        // Logika Broadcast Pengumuman
         if (data.broadcast && data.broadcast !== lastBroadcast) {
           setLastBroadcast(data.broadcast);
           setShowBroadcast(true);
@@ -90,9 +79,6 @@ export default function ExamRoom({ studentData, onFinish }) {
     return () => unsub();
   }, [sid, isLocked, storageKey, lastBroadcast]);
 
-  // ==========================================
-  // SISTEM KEAMANAN (BLUR, FULLSCREEN, SPLIT SCREEN)
-  // ==========================================
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
     const handleVisibilityChange = () => { if(document.hidden && !isLocked) triggerWarning("Meninggalkan Halaman/Aplikasi"); };
@@ -184,9 +170,6 @@ export default function ExamRoom({ studentData, onFinish }) {
     onFinish(score);
   };
 
-  // ==========================================
-  // RENDER LAYAR TERKUNCI
-  // ==========================================
   if (isLocked) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-900 p-6 text-center select-none relative overflow-hidden">
@@ -201,9 +184,6 @@ export default function ExamRoom({ studentData, onFinish }) {
     );
   }
 
-  // ==========================================
-  // RENDER LAYAR BYPASS/FULLSCREEN
-  // ==========================================
   if (!isFullscreen && !forceAllowFullscreen && questions.length > 0) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6 text-center select-none relative">
@@ -243,35 +223,27 @@ export default function ExamRoom({ studentData, onFinish }) {
       <div className={`relative z-10 transition-all duration-300 min-h-screen flex flex-col ${isBlurred ? 'blur-2xl grayscale brightness-50' : ''}`}>
         
         {/* ========================================== */}
-        {/* HEADER PROFESIONAL: IDENTITAS SEKOLAH */}
+        {/* HEADER TERANG, FULL NAMA & DI-PIN (STICKY) */}
         {/* ========================================== */}
-        <header className="bg-slate-900 text-white w-full shadow-lg border-b-4 border-emerald-500">
-          <div className="max-w-5xl mx-auto px-4 py-4 md:py-6 flex flex-col md:flex-row items-center justify-between gap-4">
+        <header className="sticky top-0 z-40 bg-white w-full shadow-md border-b-4 border-emerald-500">
+          <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
             
             {/* Logo & Nama Institusi */}
-            <div className="flex items-center gap-4 text-center md:text-left">
-              <div className="bg-white/10 p-3 rounded-2xl border border-white/10 hidden sm:block">
-                <Landmark size={36} className="text-emerald-400" />
-              </div>
-              <div>
-                <h1 className="font-black text-lg md:text-xl tracking-widest text-emerald-400 leading-tight">YASPENDIK PTP NUSANTARA IV</h1>
-                <h2 className="font-bold text-xs md:text-sm tracking-widest text-slate-300 mt-1">SMP/MTS DARMA PERTIWI BAH BUTONG</h2>
-              </div>
+            <div className="text-center sm:text-left flex-1">
+              <h1 className="font-black text-[15px] sm:text-lg tracking-widest text-emerald-700 leading-tight">YASPENDIK PTP NUSANTARA IV</h1>
+              <h2 className="font-bold text-[10px] sm:text-xs tracking-widest text-slate-500 mt-0.5">SMP/MTS DARMA PERTIWI BAH BUTONG</h2>
             </div>
 
-            {/* Info Siswa & Timer */}
-            <div className="flex items-center gap-4 bg-slate-800/80 p-2 md:p-3 rounded-2xl border border-slate-700 backdrop-blur-sm w-full md:w-auto justify-between md:justify-start">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center font-black text-xl border-2 border-slate-900 shadow-inner shrink-0">
-                  {studentData?.name?.charAt(0) || 'S'}
-                </div>
-                <div className="text-left hidden sm:block">
-                  <p className="font-bold text-sm md:text-base leading-tight truncate max-w-[150px]">{studentData?.name}</p>
-                  <p className="text-xs text-emerald-400 font-bold mt-0.5">{studentData?.class}-{studentData?.subKelas} • {studentData?.mapel}</p>
-                </div>
+            {/* Info Nama Siswa Lengkap & Timer */}
+            <div className="flex items-center justify-between w-full sm:w-auto gap-3 sm:gap-6 bg-slate-50 p-2 sm:p-3 rounded-2xl border border-slate-200">
+              <div className="text-left">
+                <p className="font-black text-sm sm:text-base text-slate-800 leading-tight truncate max-w-[180px] sm:max-w-[250px]">{studentData?.name}</p>
+                <p className="text-[10px] sm:text-xs text-emerald-600 font-bold mt-0.5 uppercase tracking-wider">
+                  Kelas {studentData?.class}-{studentData?.subKelas} • {studentData?.mapel}
+                </p>
               </div>
-              <div className="flex items-center gap-2 bg-slate-950 px-4 py-2 md:py-3 rounded-xl text-emerald-400 font-mono font-black text-xl md:text-2xl border border-slate-700 shadow-inner">
-                <Timer size={24} className="text-emerald-500" />
+              <div className="flex items-center gap-1 sm:gap-2 bg-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-emerald-600 font-mono font-black text-lg sm:text-xl border border-emerald-100 shadow-sm">
+                <Timer size={20} className="text-emerald-500 hidden sm:block" />
                 {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}
               </div>
             </div>
@@ -282,7 +254,7 @@ export default function ExamRoom({ studentData, onFinish }) {
         {/* ========================================== */}
         {/* KONTEN SOAL UJIAN */}
         {/* ========================================== */}
-        <main className="flex-1 max-w-4xl mx-auto w-full p-4 md:p-6 mt-4">
+        <main className="flex-1 max-w-4xl mx-auto w-full p-4 md:p-6 mt-2">
           
           <div className="bg-white p-6 md:p-10 rounded-3xl shadow-sm border border-slate-200 mb-6 relative overflow-hidden">
             {/* Pita Dekorasi Soal */}
@@ -352,7 +324,7 @@ export default function ExamRoom({ studentData, onFinish }) {
         </div>
       )}
 
-      {/* OVERLAY KEHILANGAN FOKUS (MAU CURANG) */}
+      {/* OVERLAY KEHILANGAN FOKUS */}
       {isBlurred && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md pointer-events-none transition-all">
           <div className="bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-4 animate-pulse border-4 border-red-500 text-center max-w-sm mx-4">
