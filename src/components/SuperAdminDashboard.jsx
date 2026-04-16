@@ -98,6 +98,14 @@ export default function SuperAdminDashboard({ onLogout }) {
       alert("Database Sesi Ujian berhasil direset.");
     }
   };
+  
+  // FUNGSI BARU: BERSIHKAN REKAP NILAI
+  const resetRekapNilai = () => {
+    if(window.confirm("🚨 KONFIRMASI PENGHAPUSAN!\nPastikan Anda sudah men-download Rekap Master (Excel) sebelum melakukan ini.\n\nSemua data nilai saat ini akan dihapus permanen untuk mempersiapkan database bagi jadwal ujian selanjutnya.\n\nLanjutkan bersihkan rekap nilai?")) {
+      remove(ref(db, 'leaderboard'));
+      alert("Database Rekap Nilai berhasil dikosongkan. Sistem siap untuk ujian berikutnya!");
+    }
+  };
 
   const downloadMasterRecap = () => {
     if (!data.lead || data.lead.length === 0) {
@@ -184,10 +192,11 @@ export default function SuperAdminDashboard({ onLogout }) {
               {/* PUSAT KENDALI DATA (DANGER ZONE) */}
               <div className="mt-8 bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl">
                 <h4 className="text-amber-500 font-black text-sm uppercase mb-4 tracking-widest flex items-center gap-2"><Settings size={18}/> Pusat Kendali Data</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <button onClick={downloadMasterRecap} className="p-4 bg-emerald-950/40 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-2xl border border-emerald-900/50 font-bold transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"><Download size={20}/> Download Rekap Master</button>
-                  <button onClick={resetLiveStudents} className="p-4 bg-red-950/40 hover:bg-red-600 text-red-500 hover:text-white rounded-2xl border border-red-900/50 font-bold transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"><Trash2 size={20}/> Bersihkan Live Siswa</button>
-                  <button onClick={resetAllSessions} className="p-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl border border-slate-700 font-bold transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"><XCircle size={20}/> Reset Semua Sesi</button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <button onClick={downloadMasterRecap} className="p-4 bg-emerald-950/40 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-2xl border border-emerald-900/50 font-bold transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"><Download size={20}/> Download Rekap</button>
+                  <button onClick={resetLiveStudents} className="p-4 bg-red-950/40 hover:bg-red-600 text-red-500 hover:text-white rounded-2xl border border-red-900/50 font-bold transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"><Trash2 size={20}/> Hapus Live Siswa</button>
+                  <button onClick={resetAllSessions} className="p-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl border border-slate-700 font-bold transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"><XCircle size={20}/> Reset Sesi Ujian</button>
+                  <button onClick={resetRekapNilai} className="p-4 bg-orange-950/40 hover:bg-orange-600 text-orange-500 hover:text-white rounded-2xl border border-orange-900/50 font-bold transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"><Trash2 size={20}/> Bersihkan Nilai</button>
                 </div>
               </div>
 
