@@ -2,12 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from './firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { ref, set, push, onValue, get, update } from 'firebase/database';
-// TAMBAHAN IKON: CheckCircle untuk notifikasi QR
-import { GraduationCap, Moon, Sun, User, Lock, Key, LayoutGrid, Users, CheckCircle } from 'lucide-react';
+// TAMBAHAN IKON: RefreshCw untuk indikator sinkronisasi
+import { GraduationCap, Moon, Sun, User, Lock, Key, LayoutGrid, Users, CheckCircle, RefreshCw } from 'lucide-react';
 import ExamRoom from './components/ExamRoom';
 import ResultPage from './components/ResultPage';
 import TeacherDashboard from './components/TeacherDashboard';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
+
+// ==========================================
+// KONFIGURASI VERSI APLIKASI (V2)
+// ==========================================
+const APP_VERSION = "2.0.0"; 
 
 export default function App() {
   const [currentView, setCurrentView] = useState(localStorage.getItem('currentView') || 'login');
@@ -16,12 +21,34 @@ export default function App() {
   const [logoClicks, setLogoClicks] = useState(0);
   const [activeSessions, setActiveSessions] = useState([]);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false); // State untuk layar sinkronisasi
   
-  // STATE BARU: PENANGKAP TOKEN DARI QR CODE
   const [scannedToken, setScannedToken] = useState('');
   
   const getSafeData = () => { try { return JSON.parse(localStorage.getItem('studentData')) || null; } catch (e) { localStorage.removeItem('studentData'); return null; } };
   const [studentData, setStudentData] = useState(getSafeData());
+
+  // 1. MONITORING SINKRONISASI GLOBAL (ANTI-BLANK UPDATE)
+  useEffect(() => {
+    const versionRef = ref(db, 'settings/activeVersion');
+    onValue(versionRef, (snapshot) => {
+      const serverVersion = snapshot.val();
+      // Jika versi di server berbeda dengan versi di HP ini
+      if (serverVersion && serverVersion !== APP_VERSION) {
+        setIsSyncing(true); // Aktifkan layar kunci sinkronisasi
+        
+        // Simpan data ujian yang sedang berjalan ke LocalStorage sebagai backup darurat
+        if (studentData) {
+          localStorage.setItem('sync_backup', JSON.stringify(studentData));
+        }
+
+        // Beri jeda 3 detik agar proses backup selesai, lalu ambil kode baru dari server
+        setTimeout(() => {
+          window.location.reload(true);
+        }, 3000);
+      }
+    });
+  }, [studentData]);
 
   useEffect(() => {
     localStorage.setItem('currentView', currentView);
@@ -36,7 +63,6 @@ export default function App() {
     });
   }, []);
 
-  // FUNGSI BARU: ANTENA PENANGKAP URL QR CODE
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tokenFromUrl = params.get('token');
@@ -47,7 +73,6 @@ export default function App() {
 
   const availableClasses = [...new Set(activeSessions.map(s => s.kelas).filter(Boolean))];
 
-  // FUNGSI DIPERBARUI: LOGIN SISWA DENGAN ANTI-JOKI & SMART RECONNECT
   const handleStudentStart = async (e) => {
     e.preventDefault();
     const name = e.target.studentName.value.trim();
@@ -59,14 +84,12 @@ export default function App() {
     if (!validSession) return alert("❌ AKSES DITOLAK: Token tidak ditemukan atau Kelas salah!");
 
     try {
-      // 1. Buat atau Ambil Sidik Jari Perangkat (Device ID)
       let deviceId = localStorage.getItem('cbt_device_id');
       if (!deviceId) {
         deviceId = 'dev_' + Math.random().toString(36).substring(2, 15);
         localStorage.setItem('cbt_device_id', deviceId);
       }
 
-      // 2. Cek apakah siswa ini sudah login sebelumnya
       const snapshot = await get(ref(db, 'live_students'));
       let existingStudentId = null;
       let existingData = null;
@@ -75,14 +98,12 @@ export default function App() {
         const allStudents = snapshot.val();
         for (const key in allStudents) {
           const s = allStudents[key];
-          // Jika nama dan tokennya sama persis
           if (s.token === tokenInput && s.name.toLowerCase() === name.toLowerCase()) {
             if (s.status === 'Selesai') {
                return alert("⚠️ Ujian untuk nama ini sudah diselesaikan dan dikumpulkan.");
             }
-            // Jika Device ID-nya beda (Ada orang lain mencoba login pakai nama dia)
             if (s.deviceId && s.deviceId !== deviceId) {
-               return alert("🚨 ANTI-JOKI AKTIF!\nNama ini sedang mengerjakan ujian di perangkat/HP lain. Silakan gunakan perangkat asli Anda atau lapor Pengawas.");
+               return alert("🚨 ANTI-JOKI AKTIF!\nNama ini sedang mengerjakan ujian di perangkat/HP lain.");
             }
             existingStudentId = key;
             existingData = s;
@@ -92,16 +113,12 @@ export default function App() {
       }
 
       let finalData;
-
       if (existingStudentId) {
-        // 3a. Siswa Refresh/Keluar Web tidak sengaja -> Sambungkan Kembali (Reconnect)
         const newRef = ref(db, `live_students/${existingStudentId}`);
         finalData = { ...existingData, status: 'Online', deviceId };
         await update(newRef, { status: 'Online', deviceId });
-        // Hapus sisa URL token agar bersih
         window.history.replaceState({}, document.title, window.location.pathname);
       } else {
-        // 3b. Siswa Baru -> Buat Data Baru
         const newRef = push(ref(db, 'live_students'));
         finalData = { 
           id: newRef.key, 
@@ -114,7 +131,7 @@ export default function App() {
           status: 'Online', 
           progress: 0, 
           warnings: 0, 
-          deviceId, // Simpan Sidik Jari Perangkat ke Server
+          deviceId, 
           timestamp: Date.now() 
         };
         await set(newRef, finalData);
@@ -157,27 +174,29 @@ export default function App() {
     <div className={darkMode ? 'dark' : ''}>
       <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
         
-        {/* TOMBOL DARK MODE (HANYA MUNCUL DI HALAMAN LOGIN SISWA) */}
-        {currentView === 'login' && (
-          <button 
-            onClick={() => setDarkMode(!darkMode)} 
-            className="fixed bottom-6 right-6 md:top-6 md:bottom-auto md:right-6 z-[100] p-3.5 md:p-2.5 rounded-full bg-slate-900 text-yellow-400 md:bg-white md:dark:bg-slate-800 md:text-slate-600 shadow-2xl md:shadow-md border border-gray-700 md:border-gray-100 md:dark:border-slate-700"
-          >
-            {darkMode ? <Sun size={24} className="md:w-5 md:h-5" /> : <Moon size={24} className="md:w-5 md:h-5 text-white md:text-slate-600" />}
-          </button>
+        {/* LAYAR OVERLAY SINKRONISASI (GLOBAL FORCE SYNC) */}
+        {isSyncing && (
+          <div className="fixed inset-0 z-[999] bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center text-white p-6 text-center">
+            <div className="bg-emerald-500 p-4 rounded-full animate-spin mb-6">
+              <RefreshCw size={48} />
+            </div>
+            <h2 className="text-2xl font-black mb-2 tracking-tight">SINKRONISASI SISTEM</h2>
+            <p className="text-slate-300 max-w-xs">Memperbarui ke versi {APP_VERSION}. Mohon tunggu, data ujian Anda aman sedang diamankan...</p>
+          </div>
         )}
 
         {currentView === 'login' && (
           <div className="flex items-center justify-center min-h-screen p-4 md:p-6">
             <div className="w-full max-w-md bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl shadow-xl border border-gray-100 dark:border-slate-700">
-              
               <div className="flex flex-col items-center mb-8">
                 <div onClick={() => { setLogoClicks(c => c + 1); if (logoClicks + 1 >= 5) { setCurrentView('admin-login'); setLogoClicks(0); } }} className="bg-emerald-500 p-4 rounded-2xl text-white mb-4 cursor-pointer shadow-lg shadow-emerald-500/30"><GraduationCap size={40} /></div>
-                <h1 className="text-2xl font-black text-slate-800 dark:text-white">CBT BRO</h1>
-                <p className="text-emerald-600 dark:text-emerald-400 font-medium text-sm mt-1">Portal Ujian Siswa</p>
+                <h1 className="text-2xl font-black text-slate-800 dark:text-white uppercase tracking-tighter">Darma Pertiwi CBT</h1>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full dark:bg-emerald-900/30 dark:text-emerald-400">V {APP_VERSION}</span>
+                  <p className="text-slate-500 dark:text-slate-400 font-medium text-xs">Portal Resmi Siswa</p>
+                </div>
               </div>
 
-              {/* NOTIFIKASI JIKA TOKEN TERSCAN LEWAT QR CODE */}
               {scannedToken && window.location.search.includes('token') && (
                 <div className="mb-6 p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-bold rounded-xl text-center flex items-center justify-center gap-2 animate-pulse shadow-inner">
                   <CheckCircle size={18} /> Token QR Terdeteksi!
@@ -200,7 +219,7 @@ export default function App() {
                     onChange={e => setScannedToken(e.target.value.toUpperCase())}
                     required 
                     placeholder="Kode Token" 
-                    className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 font-mono uppercase tracking-widest font-black" 
+                    className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 font-mono uppercase tracking-widest font-black text-center" 
                   />
                 </div>
                 <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-xl mt-4 active:scale-95 transition-transform shadow-lg shadow-emerald-500/30 tracking-widest text-lg">MULAI UJIAN</button>
@@ -209,6 +228,7 @@ export default function App() {
           </div>
         )}
 
+        {/* ... (Sisanya tetap sama seperti kode asli Bos) ... */}
         {currentView === 'admin-login' && (
           <div className="flex items-center justify-center min-h-screen p-4 md:p-6 bg-slate-950">
             <div className="w-full max-w-md bg-white p-6 md:p-8 rounded-3xl shadow-xl">
