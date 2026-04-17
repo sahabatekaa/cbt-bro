@@ -5,7 +5,6 @@ import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
 import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
 
 export default function TeacherDashboard({ onLogout }) {
   const [activeTab, setActiveTab] = useState(localStorage.getItem('teacherTab') || 'settings');
@@ -52,7 +51,6 @@ export default function TeacherDashboard({ onLogout }) {
       });
     }
     
-    // PERBAIKAN KRUSIAL: Memastikan ID Firebase asli yang dipakai, tidak tertimpa data lain
     const fetchData = (path, key) => onValue(dbRef(db, path), snap => {
       const val = snap.val();
       if (val && typeof val === 'object') {
@@ -115,6 +113,7 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
+  // HAPUS SEMUA DATA GURU (MASSAL)
   const handleDeleteMyRecap = async () => {
     if (myLeaderboard.length === 0) return alert("Belum ada data nilai untuk dihapus.");
     if(window.confirm("🚨 PERHATIAN!\nHapus SEMUA rekap nilai siswa khusus untuk mata pelajaran Anda?\n(Data guru lain di server pusat tidak akan terpengaruh).")) {
@@ -128,6 +127,7 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
+  // HAPUS SATU PER SATU (PRESISI)
   const handleDeleteSingleRecap = (id, studentName) => {
     if (window.confirm(`🚨 Yakin ingin menghapus data ujian milik "${studentName}"?\nTindakan ini tidak dapat dibatalkan.`)) {
       remove(dbRef(db, `leaderboard/${id}`))
@@ -469,7 +469,6 @@ export default function TeacherDashboard({ onLogout }) {
                 </table>
               </div>
               
-              {/* TAMPILAN KARTU DI LAYAR HP/WEB DENGAN TOMBOL HAPUS PRESISI */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 print:hidden">
                 {filteredLeaderboard.map((s, i) => (
                   <div key={s?.id || i} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col hover:border-emerald-300 transition-colors">
@@ -579,4 +578,3 @@ export default function TeacherDashboard({ onLogout }) {
     </div>
   );
 }
-
