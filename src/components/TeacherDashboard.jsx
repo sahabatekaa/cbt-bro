@@ -4,7 +4,6 @@ import { ref as dbRef, onValue, push, remove, update, set } from 'firebase/datab
 import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
-// BUGFIX: Mengganti 'Image' menjadi 'ImageIcon' agar tidak bentrok dengan HTML Image bawaan
 import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck } from 'lucide-react';
 
 export default function TeacherDashboard({ onLogout }) {
@@ -33,7 +32,6 @@ export default function TeacherDashboard({ onLogout }) {
   const [broadcastText, setBroadcastText] = useState(''); 
   const [printMode, setPrintMode] = useState('rekap'); 
 
-  // BUGFIX: Menambahkan default spasi pada pertanyaan agar Latex tidak crash
   const defaultForm = { mapel: '', kelas: '', pertanyaan: ' ', gambar: '', opsiA: ' ', opsiB: ' ', opsiC: ' ', opsiD: ' ', kunci: 'A' };
   const [formData, setFormData] = useState(defaultForm);
   const [editSoalId, setEditSoalId] = useState(null);
@@ -144,6 +142,9 @@ export default function TeacherDashboard({ onLogout }) {
     setShowModal(true); 
   };
   
+  // PERBAIKAN: Fungsi triggerImport ditambahkan kembali
+  const triggerImport = () => { if(fileInputRef.current) fileInputRef.current.click(); };
+
   const handleFileUpload = (e) => { 
     const file = e.target.files[0]; 
     if (!file) return; 
@@ -347,15 +348,16 @@ export default function TeacherDashboard({ onLogout }) {
                         </div>
                       )}
 
-                      <p className="font-bold text-lg mb-6 text-slate-800 leading-relaxed break-words">
+                      <div className="font-bold text-lg mb-6 text-slate-800 leading-relaxed break-words flex">
                         <span className="text-emerald-600 mr-2">{i+1}.</span>
-                        <Latex>{q.pertanyaan || ' '}</Latex>
-                      </p>
+                        <div className="flex-1"><Latex>{String(q.pertanyaan || ' ')}</Latex></div>
+                      </div>
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {['A','B','C','D'].map(opt => (
-                          <div key={opt} className={`p-4 rounded-2xl border ${q.kunci === opt ? 'bg-emerald-50 border-emerald-300 font-bold text-emerald-900' : 'bg-slate-50 border-slate-100 text-slate-500'}`}>
-                            <Latex>{`${opt}. ${q[`opsi${opt}`] || ' '}`}</Latex>
+                          <div key={opt} className={`p-4 rounded-2xl border ${q.kunci === opt ? 'bg-emerald-50 border-emerald-300 font-bold text-emerald-900' : 'bg-slate-50 border-slate-100 text-slate-500'} flex`}>
+                            <span className="font-black mr-2">{opt}.</span>
+                            <div className="flex-1"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
                           </div>
                         ))}
                       </div>
@@ -394,7 +396,6 @@ export default function TeacherDashboard({ onLogout }) {
                   ))}
                </div>
                
-               {/* TAMPILAN CETAK LENGKAP V1 RESTORED */}
                <div className="hidden print:block">
                   <div className="text-center mb-8 border-b-4 border-double border-black pb-4">
                     <h1 className="text-2xl font-black uppercase">SMP/MTS DARMA PERTIWI BAH BUTONG</h1>
@@ -490,13 +491,13 @@ export default function TeacherDashboard({ onLogout }) {
               <div className="p-4 md:p-8 bg-slate-50 rounded-3xl border border-slate-200 space-y-6">
                 <div className="bg-white p-6 rounded-2xl shadow-sm">
                   {formData.gambar && <img src={formData.gambar} className="mb-4 rounded-xl max-h-60 mx-auto" />}
-                  <p className="text-xl font-bold text-slate-800 leading-relaxed break-words"><Latex>{formData.pertanyaan || 'Ketik pertanyaan...'}</Latex></p>
+                  <div className="text-xl font-bold text-slate-800 leading-relaxed break-words"><Latex>{String(formData.pertanyaan || 'Ketik pertanyaan...')}</Latex></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {['A','B','C','D'].map(opt => (
-                    <div key={opt} className={`p-5 rounded-2xl border-2 bg-white transition-all break-words ${formData.kunci === opt ? 'border-emerald-500 bg-emerald-50/30' : 'border-slate-100'}`}>
+                    <div key={opt} className={`p-5 rounded-2xl border-2 bg-white transition-all break-words flex ${formData.kunci === opt ? 'border-emerald-500 bg-emerald-50/30' : 'border-slate-100'}`}>
                       <span className="font-black text-emerald-600 mr-2">{opt}.</span>
-                      <Latex>{formData[`opsi${opt}`] || ' '}</Latex>
+                      <div className="flex-1"><Latex>{String(formData[`opsi${opt}`] || ' ')}</Latex></div>
                     </div>
                   ))}
                 </div>
