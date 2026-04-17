@@ -4,8 +4,9 @@ import { ref as dbRef, onValue, push, remove, update } from 'firebase/database';
 import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
-// PERBAIKAN IKON: Menggunakan ShieldAlert alih-alih CheckSquare
-import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert } from 'lucide-react';
+import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode } from 'lucide-react';
+// IMPORT GENERATOR QR CODE
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function TeacherDashboard({ onLogout }) {
   const [activeTab, setActiveTab] = useState(localStorage.getItem('teacherTab') || 'settings');
@@ -15,6 +16,10 @@ export default function TeacherDashboard({ onLogout }) {
   const [data, setData] = useState({ live: [], bank: [], lead: [], sessions: [] });
   const [showModal, setShowModal] = useState(false);
   const [activeMonitorToken, setActiveMonitorToken] = useState(localStorage.getItem('activeMonitorToken') || '');
+  
+  // STATE BARU UNTUK FITUR QR CODE
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [activeQRToken, setActiveQRToken] = useState('');
   
   const currentUserEmail = auth.currentUser?.email || 'guru@unknown.com';
   const [teacherProfile, setTeacherProfile] = useState({ name: 'Memuat...', email: currentUserEmail });
@@ -103,10 +108,17 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
-  const handleDeleteMyRecap = () => {
-    if(window.confirm("Hapus SEMUA rekap nilai siswa yang tersimpan untuk mata pelajaran Anda?\n(Data guru lain tidak akan terpengaruh).")) {
-      myLeaderboard.forEach(s => remove(dbRef(db, `leaderboard/${s.id}`)));
-      alert("Data nilai Anda berhasil dibersihkan dari server.");
+  // PERBAIKAN: Fungsi hapus rekap kini menggunakan async/await agar Firebase tidak kewalahan
+  const handleDeleteMyRecap = async () => {
+    if (myLeaderboard.length === 0) return alert("Belum ada data nilai untuk dihapus.");
+    if(window.confirm("🚨 PERHATIAN!\nHapus SEMUA rekap nilai siswa khusus untuk mata pelajaran Anda?\n(Data guru lain di server pusat tidak akan terpengaruh).")) {
+      try {
+        const promises = myLeaderboard.map(s => remove(dbRef(db, `leaderboard/${s.id}`)));
+        await Promise.all(promises);
+        alert("Data nilai Anda berhasil dibersihkan dari server.");
+      } catch (error) {
+        alert("Gagal menghapus data: " + error.message);
+      }
     }
   };
 
@@ -136,6 +148,9 @@ export default function TeacherDashboard({ onLogout }) {
   const toggleSession = (id, s) => update(dbRef(db, `exam_sessions/${id}`), { status: s === 'open' ? 'closed' : 'open' });
   const delSession = (id) => { if(window.confirm("Hapus?")) remove(dbRef(db, `exam_sessions/${id}`)); };
   const setMonitor = (t) => { setActiveMonitorToken(t); localStorage.setItem('activeMonitorToken', t); setActiveTab('proctor'); };
+  
+  // FUNGSI PEMBUKA MODAL QR
+  const openQR = (token) => { setActiveQRToken(token); setShowQRModal(true); };
 
   const NavItem = ({ tab, icon: Icon, label }) => (<button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-4 rounded-xl transition-all ${activeTab === tab ? 'bg-emerald-600 text-white font-black shadow-lg shadow-emerald-600/30' : 'text-slate-500 hover:bg-slate-100 font-bold'}`}><Icon size={20}/> <span>{label}</span></button>);
 
@@ -220,7 +235,7 @@ export default function TeacherDashboard({ onLogout }) {
                 {mySessions.length === 0 ? (
                   <div className="bg-white p-12 rounded-3xl text-center border border-dashed border-slate-300 text-slate-400 font-bold">Belum ada sesi yang dirilis.</div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {mySessions.map((s) => (
                       <div key={s.id} className={`p-6 rounded-3xl border shadow-sm flex flex-col justify-between transition-colors ${s.status==='open'?'bg-white border-emerald-200 hover:border-emerald-400':'bg-slate-50 border-slate-200 opacity-75'}`}>
                         <div>
@@ -233,10 +248,13 @@ export default function TeacherDashboard({ onLogout }) {
                             <span className="text-xs font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200">Kls: {s.kelas}-{s.subKelas}</span>
                           </div>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-4">
-                          <button onClick={() => setMonitor(s.token)} className="col-span-3 sm:col-span-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl text-sm font-bold flex justify-center items-center gap-2 shadow-sm active:scale-95"><Eye size={18}/> <span className="sm:hidden">Monitor</span></button>
-                          <button onClick={() => toggleSession(s.id, s.status)} className="col-span-3 sm:col-span-1 bg-slate-50 hover:bg-slate-100 text-slate-700 py-3 rounded-xl text-sm font-bold flex justify-center items-center gap-2 active:scale-95 border border-slate-200">{s.status==='open'?<Lock size={18}/>:<Unlock size={18}/>} <span className="sm:hidden">Kunci</span></button>
-                          <button onClick={() => delSession(s.id)} className="col-span-3 sm:col-span-1 bg-red-50 hover:bg-red-100 text-red-600 py-3 rounded-xl text-sm font-bold flex justify-center items-center gap-2 active:scale-95 border border-red-100"><Trash2 size={18}/> <span className="sm:hidden">Hapus</span></button>
+                        <div className="grid grid-cols-4 gap-2 border-t border-slate-100 pt-4">
+                          {/* TOMBOL BARU: TAMPILKAN QR CODE */}
+                          <button onClick={() => openQR(s.token)} className="col-span-4 sm:col-span-1 bg-blue-50 hover:bg-blue-100 text-blue-600 py-3 rounded-xl text-sm font-bold flex justify-center items-center gap-2 shadow-sm active:scale-95 border border-blue-100"><QrCode size={18}/> <span className="sm:hidden">Tampilkan QR</span></button>
+                          
+                          <button onClick={() => setMonitor(s.token)} className="col-span-4 sm:col-span-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl text-sm font-bold flex justify-center items-center gap-2 shadow-sm active:scale-95"><Eye size={18}/> <span className="sm:hidden">Monitor</span></button>
+                          <button onClick={() => toggleSession(s.id, s.status)} className="col-span-4 sm:col-span-1 bg-slate-50 hover:bg-slate-100 text-slate-700 py-3 rounded-xl text-sm font-bold flex justify-center items-center gap-2 active:scale-95 border border-slate-200">{s.status==='open'?<Lock size={18}/>:<Unlock size={18}/>} <span className="sm:hidden">Kunci</span></button>
+                          <button onClick={() => delSession(s.id)} className="col-span-4 sm:col-span-1 bg-red-50 hover:bg-red-100 text-red-600 py-3 rounded-xl text-sm font-bold flex justify-center items-center gap-2 active:scale-95 border border-red-100"><Trash2 size={18}/> <span className="sm:hidden">Hapus</span></button>
                         </div>
                       </div>
                     ))}
@@ -263,21 +281,18 @@ export default function TeacherDashboard({ onLogout }) {
                     <div className="bg-white p-5 rounded-3xl border-l-4 border-l-emerald-500 shadow-sm"><p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-wider">Selesai</p><p className="text-4xl font-black text-emerald-600">{monitoredStudents.filter(s => s.status === 'Selesai').length}</p></div>
                     <div className="bg-white p-5 rounded-3xl border-l-4 border-l-red-500 shadow-sm"><p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-wider">Curang</p><p className="text-4xl font-black text-red-600">{monitoredStudents.filter(s => (s?.warnings || 0) > 0).length}</p></div>
                     <div className="bg-slate-900 p-5 rounded-3xl flex flex-col justify-center items-center shadow-lg border border-slate-800">
-                       {/* PERBAIKAN IKON: Menggunakan ShieldAlert */}
                        <button onClick={forceSubmitAll} className="w-full h-full bg-red-600 hover:bg-red-500 text-white rounded-xl font-black flex items-center justify-center gap-2 active:scale-95 transition-all flex-col p-2 text-center shadow-lg shadow-red-600/30">
                           <ShieldAlert size={24} className="mb-1" /> Tarik Paksa Semua
                        </button>
                     </div>
                   </div>
 
-                  {/* PANEL BROADCAST PENGUMUMAN */}
                   <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center">
                     <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-blue-50 text-blue-600"><MessageSquare size={24}/></div>
                     <div className="flex-1 w-full"><input value={broadcastText} onChange={e => setBroadcastText(e.target.value)} placeholder="Tulis pengumuman darurat ke layar siswa di ruangan ini..." className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-blue-500 focus:bg-white font-bold text-slate-700" /></div>
                     <button onClick={sendBroadcast} className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-blue-600/30 tracking-widest"><Send size={18}/> SIARKAN</button>
                   </div>
                   
-                  {/* DAFTAR SISWA LIVE */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {monitoredStudents.map(s => (
                       <div key={s.id} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col gap-4 hover:border-emerald-300 transition-colors">
@@ -286,12 +301,10 @@ export default function TeacherDashboard({ onLogout }) {
                             <p className="font-black text-slate-800 text-lg leading-tight truncate">{s?.name || '-'}</p>
                             <span className="inline-block mt-1 bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold border border-slate-200">{s?.class}-{s?.subKelas}</span>
                           </div>
-                          {/* PERBAIKAN LOGIKA WARNINGS */}
                           {(s?.warnings || 0) > 0 && <span className="bg-red-50 text-red-600 text-xs font-black px-2 py-1 rounded border border-red-200 animate-pulse whitespace-nowrap">(!Tab {s.warnings}x)</span>}
                         </div>
                         
                         <div>
-                          {/* PERBAIKAN PROGRESS BAR (Mencegah WSOD) */}
                           <div className="flex justify-between text-xs font-bold text-slate-500 mb-2"><span>Progress Ujian</span><span className="text-emerald-600">{s?.progress || 0}%</span></div>
                           <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden shadow-inner"><div className="bg-emerald-500 h-full transition-all duration-500" style={{width:`${s?.progress || 0}%`}}></div></div>
                         </div>
@@ -319,7 +332,6 @@ export default function TeacherDashboard({ onLogout }) {
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 print:hidden space-y-5">
                 <h3 className="text-xl font-black mb-2 text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4"><BookOpen className="text-emerald-500"/> Manajemen Bank Soal</h3>
                 
-                {/* CSS GRID untuk dropdown agar rata */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   <select value={bankMapel} onChange={e => setBankMapel(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Mata Pelajaran --</option>{availableBankMapel.map(m => <option key={m}>{m}</option>)}</select>
                   <select value={bankKelas} onChange={e => setBankKelas(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Tingkatan Kelas --</option>{availableBankKelas.map(k => <option key={k}>{k}</option>)}</select>
@@ -371,7 +383,6 @@ export default function TeacherDashboard({ onLogout }) {
                   <button onClick={handleDeleteMyRecap} className="w-full md:w-auto bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-colors shadow-sm"><Trash2 size={18}/> Bersihkan Nilai Saya</button>
                 </div>
                 
-                {/* CSS GRID agar kolom tidak tumpang tindih / lari */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <select value={recapMapel} onChange={e => setRecapMapel(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Mapel --</option>{availableRecapMapel.map(m => <option key={m}>{m}</option>)}</select>
                   <select value={recapKelas} onChange={e => setRecapKelas(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Tingkatan --</option>{availableRecapKelas.map(k => <option key={k}>{k}</option>)}</select>
@@ -439,7 +450,6 @@ export default function TeacherDashboard({ onLogout }) {
                     {filteredLeaderboard.map((s, i) => (
                       <tr key={s?.id || i}><td className="py-3 px-3 text-center">{i+1}</td><td className="py-3 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td><td className="py-3 px-3 text-center">{s?.class}-{s?.subKelas}</td><td className="py-3 px-3"><span className="text-xs text-gray-400">{i+1}. </span></td></tr>
                     ))}
-                    {/* Tambahan baris kosong jika data sedikit */}
                     {[...Array(Math.max(0, 15 - filteredLeaderboard.length))].map((_, i) => (
                       <tr key={`empty-${i}`}><td className="py-4"></td><td></td><td></td><td></td></tr>
                     ))}
@@ -447,7 +457,6 @@ export default function TeacherDashboard({ onLogout }) {
                 </table>
               </div>
               
-              {/* TAMPILAN KARTU DI LAYAR HP/WEB */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 print:hidden">
                 {filteredLeaderboard.map((s, i) => (
                   <div key={s?.id || i} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between hover:border-emerald-300 transition-colors">
@@ -497,15 +506,41 @@ export default function TeacherDashboard({ onLogout }) {
         </div>
       </main>
 
+      {/* MODAL POP-UP: TAMPILKAN QR CODE RAKSASA */}
+      {showQRModal && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 z-[120] print:hidden">
+          <div className="bg-white p-8 md:p-12 rounded-[3rem] w-full max-w-xl shadow-2xl flex flex-col items-center text-center transform transition-all animate-in zoom-in duration-300">
+            <button onClick={() => setShowQRModal(false)} className="absolute top-6 right-6 p-2 bg-slate-100 hover:bg-red-100 text-slate-500 hover:text-red-600 rounded-full transition-colors"><X size={24}/></button>
+            
+            <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-2">SCAN UNTUK MASUK</h2>
+            <p className="text-slate-500 font-bold mb-8">Buka kamera HP Anda dan arahkan ke kode QR ini.</p>
+            
+            <div className="bg-white p-4 rounded-3xl border-8 border-emerald-500 shadow-xl mb-8">
+              <QRCodeSVG 
+                value={`${window.location.origin}/?token=${activeQRToken}`} 
+                size={280} 
+                level="H" 
+                includeMargin={true} 
+              />
+            </div>
+            
+            <div className="bg-slate-50 border border-slate-200 px-8 py-4 rounded-2xl w-full">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">ATAU GUNAKAN TOKEN</p>
+              <p className="text-4xl font-black font-mono text-emerald-600 tracking-[0.3em]">{activeQRToken}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL TAMBAH/EDIT SOAL MANUAL */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[110] print:hidden">
           <div className="bg-white p-6 md:p-8 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100">
             <h2 className="text-xl font-black mb-6 text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4"><Edit className="text-emerald-500"/> {editSoalId ? 'Revisi Soal Ujian' : 'Ketik Soal Baru'}</h2>
             <form onSubmit={handleAddOrEditSoal} className="space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Mata Pelajaran</label><input required value={formData.mapel} placeholder="Contoh: Matematika" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, mapel: e.target.value})} /></div>
-                <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Tingkat</label><input required value={formData.kelas} placeholder="Cth: 9" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 text-center focus:bg-white" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Mata Pelajaran</label><input required value={formData.mapel} placeholder="Contoh: Matematika" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, mapel: e.target.value})} /></div>
+                <div className="sm:w-1/3"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Tingkat</label><input required value={formData.kelas} placeholder="Cth: 9" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 text-center focus:bg-white" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
               </div>
               
               <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Teks Pertanyaan (Gunakan $...$ untuk Rumus Math)</label><textarea required value={formData.pertanyaan} placeholder="Ketik soal di sini..." className="w-full p-5 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 min-h-[120px] leading-relaxed text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, pertanyaan: e.target.value})} /></div>
@@ -514,9 +549,9 @@ export default function TeacherDashboard({ onLogout }) {
               
               <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Kunci Jawaban Benar</label><select className="w-full p-4 border border-emerald-300 bg-emerald-50 text-emerald-800 font-black rounded-2xl outline-none cursor-pointer focus:border-emerald-500" value={formData.kunci} onChange={e => setFormData({...formData, kunci: e.target.value})}><option value="A">Opsi A</option><option value="B">Opsi B</option><option value="C">Opsi C</option><option value="D">Opsi D</option></select></div>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-slate-100 mt-6">
-                <button type="button" onClick={() => { setShowModal(false); setEditSoalId(null); setFormData(defaultForm); }} className="w-full py-4 bg-slate-100 hover:bg-slate-200 rounded-2xl font-bold text-slate-600 active:scale-95 transition-colors cursor-pointer">Batalkan</button>
-                <button type="submit" className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black shadow-lg shadow-emerald-600/30 active:scale-95 transition-transform cursor-pointer">{editSoalId ? 'Simpan Revisi' : 'Tambahkan Soal'}</button>
+              <div className="flex gap-3 pt-4 border-t border-slate-100 mt-6">
+                <button type="button" onClick={() => { setShowModal(false); setEditSoalId(null); setFormData(defaultForm); }} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 rounded-2xl font-bold text-slate-600 active:scale-95 transition-colors cursor-pointer">Batalkan</button>
+                <button type="submit" className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black shadow-lg shadow-emerald-600/30 active:scale-95 transition-transform cursor-pointer">{editSoalId ? 'Simpan Revisi' : 'Tambahkan Soal'}</button>
               </div>
             </form>
           </div>
