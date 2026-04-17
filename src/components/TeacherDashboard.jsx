@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
 import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function TeacherDashboard({ onLogout }) {
   const [activeTab, setActiveTab] = useState(localStorage.getItem('teacherTab') || 'settings');
@@ -15,7 +16,6 @@ export default function TeacherDashboard({ onLogout }) {
   const [showModal, setShowModal] = useState(false);
   const [activeMonitorToken, setActiveMonitorToken] = useState(localStorage.getItem('activeMonitorToken') || '');
   
-  // STATE BARU UNTUK FITUR QR CODE
   const [showQRModal, setShowQRModal] = useState(false);
   const [activeQRToken, setActiveQRToken] = useState('');
   
@@ -106,16 +106,12 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
-  const handleDeleteMyRecap = async () => {
-    if (myLeaderboard.length === 0) return alert("Belum ada data nilai untuk dihapus.");
-    if(window.confirm("🚨 PERHATIAN!\nHapus SEMUA rekap nilai siswa khusus untuk mata pelajaran Anda?\n(Data guru lain di server pusat tidak akan terpengaruh).")) {
-      try {
-        const promises = myLeaderboard.map(s => remove(dbRef(db, `leaderboard/${s.id}`)));
-        await Promise.all(promises);
-        alert("Data nilai Anda berhasil dibersihkan dari server.");
-      } catch (error) {
-        alert("Gagal menghapus data: " + error.message);
-      }
+  // PERBAIKAN: Fungsi hapus satu per satu (Presisi)
+  const handleDeleteSingleRecap = (id, studentName) => {
+    if (window.confirm(`🚨 Yakin ingin menghapus data ujian milik "${studentName}"?\nTindakan ini tidak dapat dibatalkan.`)) {
+      remove(dbRef(db, `leaderboard/${id}`))
+        .then(() => alert("Data berhasil dihapus!"))
+        .catch(err => alert("Gagal menghapus: " + err.message));
     }
   };
 
@@ -146,7 +142,6 @@ export default function TeacherDashboard({ onLogout }) {
   const delSession = (id) => { if(window.confirm("Hapus?")) remove(dbRef(db, `exam_sessions/${id}`)); };
   const setMonitor = (t) => { setActiveMonitorToken(t); localStorage.setItem('activeMonitorToken', t); setActiveTab('proctor'); };
   
-  // FUNGSI PEMBUKA MODAL QR
   const openQR = (token) => { setActiveQRToken(token); setShowQRModal(true); };
 
   const NavItem = ({ tab, icon: Icon, label }) => (<button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-4 rounded-xl transition-all ${activeTab === tab ? 'bg-emerald-600 text-white font-black shadow-lg shadow-emerald-600/30' : 'text-slate-500 hover:bg-slate-100 font-bold'}`}><Icon size={20}/> <span>{label}</span></button>);
@@ -246,7 +241,6 @@ export default function TeacherDashboard({ onLogout }) {
                           </div>
                         </div>
                         <div className="grid grid-cols-4 gap-2 border-t border-slate-100 pt-4">
-                          {/* TOMBOL BARU: TAMPILKAN QR CODE */}
                           <button onClick={() => openQR(s.token)} className="col-span-4 sm:col-span-1 bg-blue-50 hover:bg-blue-100 text-blue-600 py-3 rounded-xl text-sm font-bold flex justify-center items-center gap-2 shadow-sm active:scale-95 border border-blue-100"><QrCode size={18}/> <span className="sm:hidden">Tampilkan QR</span></button>
                           
                           <button onClick={() => setMonitor(s.token)} className="col-span-4 sm:col-span-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl text-sm font-bold flex justify-center items-center gap-2 shadow-sm active:scale-95"><Eye size={18}/> <span className="sm:hidden">Monitor</span></button>
@@ -377,7 +371,7 @@ export default function TeacherDashboard({ onLogout }) {
               <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 print:hidden space-y-5">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
                   <h3 className="text-xl font-black text-slate-800 flex items-center gap-3"><ClipboardList className="text-emerald-500"/> Pusat Administrasi Ujian</h3>
-                  <button onClick={handleDeleteMyRecap} className="w-full md:w-auto bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-colors shadow-sm"><Trash2 size={18}/> Bersihkan Nilai Saya</button>
+                  {/* TOMBOL "Bersihkan Nilai Saya" TELAH DIHAPUS DARI SINI */}
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -454,17 +448,26 @@ export default function TeacherDashboard({ onLogout }) {
                 </table>
               </div>
               
+              {/* TAMPILAN KARTU DI LAYAR HP/WEB DENGAN TOMBOL HAPUS PRESISI */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 print:hidden">
                 {filteredLeaderboard.map((s, i) => (
-                  <div key={s?.id || i} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between hover:border-emerald-300 transition-colors">
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
+                  <div key={s?.id || i} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col hover:border-emerald-300 transition-colors">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
                         <span className="bg-slate-800 text-white text-xs font-black px-2 py-0.5 rounded-md">#{i+1}</span>
                         <p className="font-black text-slate-800 text-lg leading-tight truncate max-w-[150px] sm:max-w-[200px]">{s?.name || 'Anonim'}</p>
                       </div>
-                      <p className="text-xs font-bold text-slate-500">{s?.mapel || '-'} • Kls: {s?.class || '-'}-{s?.subKelas || '-'}</p>
+                      
+                      {/* TOMBOL HAPUS SATU PER SATU */}
+                      <button onClick={() => handleDeleteSingleRecap(s.id, s.name)} title="Hapus Data Ini" className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors active:scale-95">
+                        <Trash2 size={18} />
+                      </button>
                     </div>
-                    <div className="text-3xl font-black text-emerald-600 bg-emerald-50 px-4 py-2 rounded-2xl border border-emerald-100 shadow-inner">{s?.score || 0}</div>
+                    
+                    <div className="flex items-end justify-between mt-2">
+                      <p className="text-xs font-bold text-slate-500">{s?.mapel || '-'} • Kls: {s?.class || '-'}-{s?.subKelas || '-'}</p>
+                      <div className="text-3xl font-black text-emerald-600 bg-emerald-50 px-4 py-2 rounded-2xl border border-emerald-100 shadow-inner">{s?.score || 0}</div>
+                    </div>
                   </div>
                 ))}
                 {filteredLeaderboard.length === 0 && <div className="col-span-full text-center p-12 bg-white rounded-3xl border border-dashed border-slate-300 text-slate-400 font-bold">Data nilai dari ujian Anda belum tersedia.</div>}
@@ -472,7 +475,7 @@ export default function TeacherDashboard({ onLogout }) {
             </div>
           )}
 
-          {/* TAB BARU: PROFIL GURU */}
+          {/* TAB: PROFIL GURU */}
           {activeTab === 'profile' && (
             <div className="max-w-2xl mx-auto print:hidden">
               <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
@@ -503,7 +506,7 @@ export default function TeacherDashboard({ onLogout }) {
         </div>
       </main>
 
-      {/* PERBAIKAN: MODAL POP-UP QR CODE DENGAN API (JALUR PINTAS) */}
+      {/* MODAL POP-UP QR CODE DENGAN API */}
       {showQRModal && (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 z-[120] print:hidden">
           <div className="bg-white p-8 md:p-12 rounded-[3rem] w-full max-w-xl shadow-2xl flex flex-col items-center text-center transform transition-all animate-in zoom-in duration-300">
@@ -513,7 +516,6 @@ export default function TeacherDashboard({ onLogout }) {
             <p className="text-slate-500 font-bold mb-8">Buka kamera HP Anda dan arahkan ke kode QR ini.</p>
             
             <div className="bg-white p-4 rounded-3xl border-8 border-emerald-500 shadow-xl mb-8 flex justify-center items-center">
-              {/* MENGGUNAKAN API QR SERVER GRATIS */}
               <img 
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(window.location.origin + '/?token=' + activeQRToken)}`} 
                 alt="QR Code Sesi Ujian" 
