@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { ref, onValue, update, push } from 'firebase/database';
-import { Timer, AlertTriangle, Book, ChevronLeft, ChevronRight, HelpCircle, Maximize, ShieldAlert, Landmark, Bell } from 'lucide-react';
+// TAMBAHAN IKON: Wifi dan WifiOff untuk indikator sinyal
+import { Timer, AlertTriangle, Book, ChevronLeft, ChevronRight, HelpCircle, Maximize, ShieldAlert, Landmark, Bell, Wifi, WifiOff } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
 
@@ -27,9 +28,28 @@ export default function ExamRoom({ studentData, onFinish }) {
   const [lastBroadcast, setLastBroadcast] = useState('');
   const [showBroadcast, setShowBroadcast] = useState(false);
 
+  // STATE BARU: INDIKATOR ONLINE/OFFLINE
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
   const answersRef = useRef(answers);
 
   useEffect(() => { answersRef.current = answers; }, [answers]);
+
+  // ==========================================
+  // LISTENER STATUS KONEKSI INTERNET
+  // ==========================================
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     onValue(ref(db, 'bank_soal'), (snap) => {
@@ -142,7 +162,12 @@ export default function ExamRoom({ studentData, onFinish }) {
   const handleSelect = (qId, opt) => {
     const newAns = { ...answers, [qId]: opt }; 
     setAnswers(newAns); localStorage.setItem(`${storageKey}_ans`, JSON.stringify(newAns));
-    update(ref(db, `live_students/${sid}`), { progress: Math.round((Object.keys(newAns).length / questions.length) * 100) });
+    
+    // Hanya update ke Firebase jika sedang online
+    if (isOnline) {
+      update(ref(db, `live_students/${sid}`), { progress: Math.round((Object.keys(newAns).length / questions.length) * 100) })
+        .catch(() => { /* Abaikan error jika terputus saat proses pengiriman */ });
+    }
   };
 
   const toggleRagu = (qId) => {
@@ -151,23 +176,33 @@ export default function ExamRoom({ studentData, onFinish }) {
   };
 
   const submitExam = async () => {
+    // PROTEKSI: Cegah submit jika sedang offline
+    if (!isOnline) {
+      alert("🚨 KONEKSI TERPUTUS!\nSistem tidak dapat mengumpulkan jawaban karena Anda sedang offline. Mohon periksa kembali koneksi internet/WiFi Anda lalu coba lagi.\n\nJangan khawatir, semua jawaban Anda aman dan tidak akan hilang.");
+      return;
+    }
+
     const finalAnswers = answersRef.current;
     let correct = 0; 
     questions.forEach(q => { if (finalAnswers[q.id] === q.kunci) correct++; });
     const score = Math.round((correct / questions.length) * 100);
     
-    await push(ref(db, 'leaderboard'), { ...studentData, score, timestamp: Date.now() });
-    await update(ref(db, `live_students/${sid}`), { status: 'Selesai' });
-    
-    localStorage.removeItem(`${storageKey}_ans`); 
-    localStorage.removeItem(`${storageKey}_ragu`);
-    localStorage.removeItem(`${storageKey}_time`); 
-    localStorage.removeItem(`${storageKey}_warn`);
-    localStorage.removeItem(`${storageKey}_lock`);
-    localStorage.removeItem(`${storageKey}_order`); 
-    
-    if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
-    onFinish(score);
+    try {
+      await push(ref(db, 'leaderboard'), { ...studentData, score, timestamp: Date.now() });
+      await update(ref(db, `live_students/${sid}`), { status: 'Selesai' });
+      
+      localStorage.removeItem(`${storageKey}_ans`); 
+      localStorage.removeItem(`${storageKey}_ragu`);
+      localStorage.removeItem(`${storageKey}_time`); 
+      localStorage.removeItem(`${storageKey}_warn`);
+      localStorage.removeItem(`${storageKey}_lock`);
+      localStorage.removeItem(`${storageKey}_order`); 
+      
+      if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+      onFinish(score);
+    } catch (error) {
+      alert("Gagal mengumpulkan ujian. Pastikan koneksi stabil dan coba lagi.");
+    }
   };
 
   if (isLocked) {
@@ -212,29 +247,22 @@ export default function ExamRoom({ studentData, onFinish }) {
       onContextMenu={(e) => e.preventDefault()} 
       className="min-h-screen bg-[#f8fafc] font-sans pb-28 select-none relative overflow-x-hidden"
     >
-      {/* WATERMARK ANTI-SCREENSHOT (Tembus Pandang) */}
       <div className="pointer-events-none fixed inset-0 z-0 flex flex-col items-center justify-center opacity-[0.03] rotate-[-30deg] text-black font-black text-3xl whitespace-nowrap overflow-hidden">
         {Array(10).fill(`${studentData?.name} - ${studentData?.class} `).map((text, i) => (
           <div key={i} className="mb-10">{text.repeat(5)}</div>
         ))}
       </div>
 
-      {/* FILTER BLUR KETIKA KEHILANGAN FOKUS */}
       <div className={`relative z-10 transition-all duration-300 min-h-screen flex flex-col ${isBlurred ? 'blur-2xl grayscale brightness-50' : ''}`}>
         
-        {/* ========================================== */}
-        {/* HEADER TERANG, FULL NAMA & DI-PIN (STICKY) */}
-        {/* ========================================== */}
         <header className="sticky top-0 z-40 bg-white w-full shadow-md border-b-4 border-emerald-500">
           <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
             
-            {/* Logo & Nama Institusi */}
             <div className="text-center sm:text-left flex-1">
               <h1 className="font-black text-[15px] sm:text-lg tracking-widest text-emerald-700 leading-tight">YASPENDIK PTP NUSANTARA IV</h1>
               <h2 className="font-bold text-[10px] sm:text-xs tracking-widest text-slate-500 mt-0.5">SMP/MTS DARMA PERTIWI BAH BUTONG</h2>
             </div>
 
-            {/* Info Nama Siswa Lengkap & Timer */}
             <div className="flex items-center justify-between w-full sm:w-auto gap-3 sm:gap-6 bg-slate-50 p-2 sm:p-3 rounded-2xl border border-slate-200">
               <div className="text-left">
                 <p className="font-black text-sm sm:text-base text-slate-800 leading-tight truncate max-w-[180px] sm:max-w-[250px]">{studentData?.name}</p>
@@ -242,22 +270,34 @@ export default function ExamRoom({ studentData, onFinish }) {
                   Kelas {studentData?.class}-{studentData?.subKelas} • {studentData?.mapel}
                 </p>
               </div>
-              <div className="flex items-center gap-1 sm:gap-2 bg-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-emerald-600 font-mono font-black text-lg sm:text-xl border border-emerald-100 shadow-sm">
-                <Timer size={20} className="text-emerald-500 hidden sm:block" />
-                {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}
+              
+              {/* PENAMBAHAN INDIKATOR ONLINE/OFFLINE */}
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-1 sm:gap-2 bg-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-emerald-600 font-mono font-black text-lg sm:text-xl border border-emerald-100 shadow-sm">
+                  <Timer size={20} className="text-emerald-500 hidden sm:block" />
+                  {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}
+                </div>
+                {isOnline ? (
+                   <span className="text-[9px] sm:text-[10px] font-bold text-emerald-600 flex items-center gap-1"><Wifi size={10} /> TERHUBUNG</span>
+                ) : (
+                   <span className="text-[9px] sm:text-[10px] font-bold text-red-500 flex items-center gap-1 animate-pulse"><WifiOff size={10} /> OFFLINE - LANJUTKAN UJIAN</span>
+                )}
               </div>
             </div>
 
           </div>
         </header>
 
-        {/* ========================================== */}
-        {/* KONTEN SOAL UJIAN */}
-        {/* ========================================== */}
+        {/* NOTIFIKASI OFFLINE BESAR JIKA KONEKSI TERPUTUS */}
+        {!isOnline && (
+          <div className="bg-red-50 border-b border-red-200 p-2 text-center text-red-600 text-xs sm:text-sm font-bold shadow-inner">
+             ⚠️ KONEKSI TERPUTUS! Anda masih bisa menjawab soal. Jawaban aman tersimpan di perangkat Anda.
+          </div>
+        )}
+
         <main className="flex-1 max-w-4xl mx-auto w-full p-4 md:p-6 mt-2">
           
           <div className="bg-white p-6 md:p-10 rounded-3xl shadow-sm border border-slate-200 mb-6 relative overflow-hidden">
-            {/* Pita Dekorasi Soal */}
             <div className="absolute top-0 left-0 w-2 h-full bg-emerald-500"></div>
             
             <span className="inline-block text-xs font-black bg-emerald-100 text-emerald-800 px-4 py-2 rounded-xl border border-emerald-200 mb-6 uppercase tracking-widest">
@@ -276,14 +316,12 @@ export default function ExamRoom({ studentData, onFinish }) {
             </div>
           </div>
 
-          {/* Tombol Navigasi Bawah */}
           <div className="flex flex-wrap gap-3 md:gap-4 mb-10">
             <button disabled={currentIndex===0} onClick={() => setCurrentIndex(currentIndex-1)} className="flex-1 min-w-[120px] p-5 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all hover:bg-slate-50 tracking-wider"><ChevronLeft size={24}/> <span className="hidden sm:inline">SEBELUMNYA</span></button>
             <button onClick={() => toggleRagu(q.id)} className={`flex-1 min-w-[120px] p-5 rounded-2xl font-black flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all tracking-wider ${ragu[q.id] ? 'bg-amber-400 text-white shadow-amber-400/40 border-2 border-amber-500' : 'bg-white border border-slate-200 text-amber-500 hover:bg-amber-50'}`}><HelpCircle size={24}/> RAGU-RAGU</button>
             <button disabled={currentIndex===questions.length-1} onClick={() => setCurrentIndex(currentIndex+1)} className="flex-1 min-w-[120px] p-5 bg-emerald-600 text-white rounded-2xl font-black disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all hover:bg-emerald-500 tracking-wider"><span className="hidden sm:inline">SELANJUTNYA</span> <ChevronRight size={24}/></button>
           </div>
 
-          {/* Panel Nomor Soal */}
           <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200">
             <h3 className="font-black text-slate-800 mb-6 flex items-center gap-2 tracking-wide uppercase"><Book size={20} className="text-emerald-500"/> Peta Navigasi Soal</h3>
             <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-3 mb-10">
@@ -301,9 +339,6 @@ export default function ExamRoom({ studentData, onFinish }) {
         </main>
       </div>
 
-      {/* ========================================== */}
-      {/* MODAL POP-UP BROADCAST DARI GURU */}
-      {/* ========================================== */}
       {showBroadcast && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 transition-all">
           <div className="bg-white rounded-[2rem] p-6 md:p-8 max-w-md w-full shadow-2xl border-4 border-blue-500 transform transition-all animate-in zoom-in duration-300">
@@ -324,7 +359,6 @@ export default function ExamRoom({ studentData, onFinish }) {
         </div>
       )}
 
-      {/* OVERLAY KEHILANGAN FOKUS */}
       {isBlurred && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md pointer-events-none transition-all">
           <div className="bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-4 animate-pulse border-4 border-red-500 text-center max-w-sm mx-4">
