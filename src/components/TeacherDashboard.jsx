@@ -5,8 +5,6 @@ import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
 import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode } from 'lucide-react';
-// IMPORT GENERATOR QR CODE
-import { QRCodeSVG } from 'qrcode.react';
 
 export default function TeacherDashboard({ onLogout }) {
   const [activeTab, setActiveTab] = useState(localStorage.getItem('teacherTab') || 'settings');
@@ -108,7 +106,6 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
-  // PERBAIKAN: Fungsi hapus rekap kini menggunakan async/await agar Firebase tidak kewalahan
   const handleDeleteMyRecap = async () => {
     if (myLeaderboard.length === 0) return alert("Belum ada data nilai untuk dihapus.");
     if(window.confirm("🚨 PERHATIAN!\nHapus SEMUA rekap nilai siswa khusus untuk mata pelajaran Anda?\n(Data guru lain di server pusat tidak akan terpengaruh).")) {
@@ -235,7 +232,7 @@ export default function TeacherDashboard({ onLogout }) {
                 {mySessions.length === 0 ? (
                   <div className="bg-white p-12 rounded-3xl text-center border border-dashed border-slate-300 text-slate-400 font-bold">Belum ada sesi yang dirilis.</div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {mySessions.map((s) => (
                       <div key={s.id} className={`p-6 rounded-3xl border shadow-sm flex flex-col justify-between transition-colors ${s.status==='open'?'bg-white border-emerald-200 hover:border-emerald-400':'bg-slate-50 border-slate-200 opacity-75'}`}>
                         <div>
@@ -506,7 +503,7 @@ export default function TeacherDashboard({ onLogout }) {
         </div>
       </main>
 
-      {/* MODAL POP-UP: TAMPILKAN QR CODE RAKSASA */}
+      {/* PERBAIKAN: MODAL POP-UP QR CODE DENGAN API (JALUR PINTAS) */}
       {showQRModal && (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 z-[120] print:hidden">
           <div className="bg-white p-8 md:p-12 rounded-[3rem] w-full max-w-xl shadow-2xl flex flex-col items-center text-center transform transition-all animate-in zoom-in duration-300">
@@ -515,12 +512,12 @@ export default function TeacherDashboard({ onLogout }) {
             <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-2">SCAN UNTUK MASUK</h2>
             <p className="text-slate-500 font-bold mb-8">Buka kamera HP Anda dan arahkan ke kode QR ini.</p>
             
-            <div className="bg-white p-4 rounded-3xl border-8 border-emerald-500 shadow-xl mb-8">
-              <QRCodeSVG 
-                value={`${window.location.origin}/?token=${activeQRToken}`} 
-                size={280} 
-                level="H" 
-                includeMargin={true} 
+            <div className="bg-white p-4 rounded-3xl border-8 border-emerald-500 shadow-xl mb-8 flex justify-center items-center">
+              {/* MENGGUNAKAN API QR SERVER GRATIS */}
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(window.location.origin + '/?token=' + activeQRToken)}`} 
+                alt="QR Code Sesi Ujian" 
+                className="w-[280px] h-[280px] object-contain"
               />
             </div>
             
@@ -538,9 +535,9 @@ export default function TeacherDashboard({ onLogout }) {
           <div className="bg-white p-6 md:p-8 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100">
             <h2 className="text-xl font-black mb-6 text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4"><Edit className="text-emerald-500"/> {editSoalId ? 'Revisi Soal Ujian' : 'Ketik Soal Baru'}</h2>
             <form onSubmit={handleAddOrEditSoal} className="space-y-5">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Mata Pelajaran</label><input required value={formData.mapel} placeholder="Contoh: Matematika" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, mapel: e.target.value})} /></div>
-                <div className="sm:w-1/3"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Tingkat</label><input required value={formData.kelas} placeholder="Cth: 9" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 text-center focus:bg-white" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Mata Pelajaran</label><input required value={formData.mapel} placeholder="Contoh: Matematika" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, mapel: e.target.value})} /></div>
+                <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Tingkat</label><input required value={formData.kelas} placeholder="Cth: 9" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 text-center focus:bg-white" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
               </div>
               
               <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Teks Pertanyaan (Gunakan $...$ untuk Rumus Math)</label><textarea required value={formData.pertanyaan} placeholder="Ketik soal di sini..." className="w-full p-5 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 min-h-[120px] leading-relaxed text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, pertanyaan: e.target.value})} /></div>
@@ -549,9 +546,9 @@ export default function TeacherDashboard({ onLogout }) {
               
               <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Kunci Jawaban Benar</label><select className="w-full p-4 border border-emerald-300 bg-emerald-50 text-emerald-800 font-black rounded-2xl outline-none cursor-pointer focus:border-emerald-500" value={formData.kunci} onChange={e => setFormData({...formData, kunci: e.target.value})}><option value="A">Opsi A</option><option value="B">Opsi B</option><option value="C">Opsi C</option><option value="D">Opsi D</option></select></div>
               
-              <div className="flex gap-3 pt-4 border-t border-slate-100 mt-6">
-                <button type="button" onClick={() => { setShowModal(false); setEditSoalId(null); setFormData(defaultForm); }} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 rounded-2xl font-bold text-slate-600 active:scale-95 transition-colors cursor-pointer">Batalkan</button>
-                <button type="submit" className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black shadow-lg shadow-emerald-600/30 active:scale-95 transition-transform cursor-pointer">{editSoalId ? 'Simpan Revisi' : 'Tambahkan Soal'}</button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-slate-100 mt-6">
+                <button type="button" onClick={() => { setShowModal(false); setEditSoalId(null); setFormData(defaultForm); }} className="w-full py-4 bg-slate-100 hover:bg-slate-200 rounded-2xl font-bold text-slate-600 active:scale-95 transition-colors cursor-pointer">Batalkan</button>
+                <button type="submit" className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black shadow-lg shadow-emerald-600/30 active:scale-95 transition-transform cursor-pointer">{editSoalId ? 'Simpan Revisi' : 'Tambahkan Soal'}</button>
               </div>
             </form>
           </div>
