@@ -1,12 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from '../firebase';
-import { ref as dbRef, onValue, push, remove, update } from 'firebase/database';
+import { ref as dbRef, onValue, push, remove, update, set } from 'firebase/database';
 import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
-import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode } from 'lucide-react';
+// TAMBAHAN IKON V2: ImageIcon (Bukan Image agar tidak crash), Zap, ShieldCheck
+import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck } from 'lucide-react';
 
 export default function TeacherDashboard({ onLogout }) {
+  // === KONFIGURASI V2 ===
+  const APP_VERSION = "2.0.0";
+  const currentUserEmail = auth.currentUser?.email || 'guru@unknown.com';
+  const isSuperAdmin = currentUserEmail === 'admin@sekolah.com';
+
   const [activeTab, setActiveTab] = useState(localStorage.getItem('teacherTab') || 'settings');
   useEffect(() => { localStorage.setItem('teacherTab', activeTab); }, [activeTab]);
 
@@ -18,7 +24,6 @@ export default function TeacherDashboard({ onLogout }) {
   const [showQRModal, setShowQRModal] = useState(false);
   const [activeQRToken, setActiveQRToken] = useState('');
   
-  const currentUserEmail = auth.currentUser?.email || 'guru@unknown.com';
   const [teacherProfile, setTeacherProfile] = useState({ name: 'Memuat...', email: currentUserEmail });
   const [tempProfileName, setTempProfileName] = useState(''); 
   
@@ -34,9 +39,11 @@ export default function TeacherDashboard({ onLogout }) {
   const [broadcastText, setBroadcastText] = useState(''); 
   const [printMode, setPrintMode] = useState('rekap'); 
 
-  const defaultForm = { mapel: '', kelas: '', pertanyaan: '', opsiA: '', opsiB: '', opsiC: '', opsiD: '', kunci: 'A' };
+  // === FORM V2 DENGAN GAMBAR & PENGAMAN LATEX ===
+  const defaultForm = { mapel: '', kelas: '', pertanyaan: ' ', gambar: '', opsiA: ' ', opsiB: ' ', opsiC: ' ', opsiD: ' ', kunci: 'A' };
   const [formData, setFormData] = useState(defaultForm);
   const [editSoalId, setEditSoalId] = useState(null);
+  const [previewMode, setPreviewMode] = useState(false); // Mode Pratinjau V2
 
   useEffect(() => {
     if(auth.currentUser) {
@@ -83,6 +90,16 @@ export default function TeacherDashboard({ onLogout }) {
   const availableRecapSubKelas = [...new Set(myLeaderboard.map(s => s?.subKelas).filter(Boolean))];
   const filteredLeaderboard = myLeaderboard.filter(s => (recapMapel === '' || s?.mapel === recapMapel) && (recapKelas === '' || s?.class === recapKelas) && (recapSubKelas === '' || s?.subKelas === recapSubKelas));
 
+  // === FITUR MASTER KENDALI V2 ===
+  const triggerGlobalUpdate = () => {
+    if(!isSuperAdmin) return;
+    if(window.confirm(`🚀 KONFIRMASI RILIS V2\nApakah Anda yakin ingin memaksa SEMUA HP SISWA beralih ke versi ${APP_VERSION} sekarang?`)) {
+      set(dbRef(db, 'settings/activeVersion'), APP_VERSION)
+        .then(() => alert("Sinyal Update Terkirim! Semua HP siswa akan memuat ulang otomatis."))
+        .catch(err => alert("Gagal: " + err.message));
+    }
+  };
+
   const handleUpdateProfile = (e) => {
     e.preventDefault();
     if(auth.currentUser) {
@@ -113,7 +130,6 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
-  // HAPUS SEMUA DATA GURU (MASSAL)
   const handleDeleteMyRecap = async () => {
     if (myLeaderboard.length === 0) return alert("Belum ada data nilai untuk dihapus.");
     if(window.confirm("🚨 PERHATIAN!\nHapus SEMUA rekap nilai siswa khusus untuk mata pelajaran Anda?\n(Data guru lain di server pusat tidak akan terpengaruh).")) {
@@ -127,7 +143,6 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
-  // HAPUS SATU PER SATU (PRESISI)
   const handleDeleteSingleRecap = (id, studentName) => {
     if (window.confirm(`🚨 Yakin ingin menghapus data ujian milik "${studentName}"?\nTindakan ini tidak dapat dibatalkan.`)) {
       remove(dbRef(db, `leaderboard/${id}`))
@@ -140,11 +155,21 @@ export default function TeacherDashboard({ onLogout }) {
     e.preventDefault(); 
     if (editSoalId) { update(dbRef(db, `bank_soal/${editSoalId}`), { ...formData }); alert("Soal diperbarui!"); } 
     else { push(dbRef(db, 'bank_soal'), { ...formData, teacherEmail: currentUserEmail }); alert("Soal ditambahkan!"); }
-    setShowModal(false); setEditSoalId(null); setFormData(defaultForm); 
+    setShowModal(false); setEditSoalId(null); setFormData(defaultForm); setPreviewMode(false);
   };
 
-  const openEditModal = (q) => { setFormData({ mapel: q.mapel||'', kelas: q.kelas||'', pertanyaan: q.pertanyaan||'', opsiA: q.opsiA||'', opsiB: q.opsiB||'', opsiC: q.opsiC||'', opsiD: q.opsiD||'', kunci: q.kunci||'A' }); setEditSoalId(q.id); setShowModal(true); };
+  const openEditModal = (q) => { 
+    setFormData({ 
+      mapel: q.mapel||'', kelas: q.kelas||'', pertanyaan: q.pertanyaan||' ', 
+      gambar: q.gambar || '', 
+      opsiA: q.opsiA||' ', opsiB: q.opsiB||' ', opsiC: q.opsiC||' ', opsiD: q.opsiD||' ', kunci: q.kunci||'A' 
+    }); 
+    setEditSoalId(q.id); 
+    setShowModal(true); 
+    setPreviewMode(false);
+  };
   
+  // === FITUR ASLI EXCEL TETAP AMAN ===
   const downloadTemplate = () => { 
     try {
       const wsData = [{ mapel: "Matematika", kelas: "9", pertanyaan: "Jika $x^2 = 4$, maka $x$ adalah?", opsiA: "2", opsiB: "3", opsiC: "4", opsiD: "5", kunci: "A" }];
@@ -196,21 +221,31 @@ export default function TeacherDashboard({ onLogout }) {
       
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 shadow-2xl md:shadow-none`}>
         <div className="p-6 border-b border-slate-100 flex justify-between items-center"><h1 className="text-xl font-black text-emerald-700 flex gap-3 items-center tracking-tight"><GraduationCap size={28} className="text-emerald-500"/> CBT DARMA PERTIWI</h1><button className="md:hidden text-slate-400" onClick={() => setIsMobileMenuOpen(false)}><X size={24}/></button></div>
-        <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-xl uppercase shadow-inner shrink-0">{teacherProfile?.name?.charAt(0) || 'G'}</div>
+        <div className="p-4 mx-4 mt-4 mb-2 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-xl uppercase shadow-inner shrink-0">{teacherProfile?.name?.charAt(0) || 'G'}</div>
           <div className="min-w-0">
-            <p className="text-xs font-black text-emerald-600 uppercase tracking-widest mb-1">Akses Guru</p>
+            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-0.5">VERSI {APP_VERSION}</p>
             <p className="text-sm font-bold truncate text-slate-800">{teacherProfile?.name}</p>
           </div>
         </div>
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           <NavItem tab="settings" icon={Settings} label="Sesi Ujian" />
           <NavItem tab="proctor" icon={Monitor} label="Monitor Live" />
-          <NavItem tab="bank" icon={BookOpen} label="Bank Soal" />
+          <NavItem tab="bank" icon={BookOpen} label="Bank Soal (V2)" />
           <NavItem tab="recap" icon={BarChart} label="Rekap Nilai & Cetak" />
           <div className="my-4 border-t border-slate-100"></div>
           <NavItem tab="profile" icon={User} label="Profil Saya" />
         </nav>
+
+        {/* TOMBOL RAHASIA SUPERADMIN V2 */}
+        {isSuperAdmin && (
+          <div className="px-4 mb-2">
+            <button onClick={triggerGlobalUpdate} className="w-full flex items-center justify-center gap-2 p-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-xs shadow-lg shadow-amber-500/30 transition-all active:scale-95 uppercase tracking-tighter">
+              <Zap size={16}/> Rilis Update Global
+            </button>
+          </div>
+        )}
+
         <div className="p-6 border-t border-slate-100"><button onClick={onLogout} className="w-full flex items-center justify-center gap-3 p-4 bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 rounded-xl font-bold transition-colors shadow-sm"><LogOut size={20}/> Keluar Akun</button></div>
       </aside>
       
@@ -218,10 +253,10 @@ export default function TeacherDashboard({ onLogout }) {
         <header className="bg-white border-b border-slate-200 p-4 lg:p-6 flex justify-between items-center z-10 print:hidden pr-16 md:pr-6">
           <div className="flex items-center gap-4">
             <button className="md:hidden p-2 bg-slate-100 rounded-lg text-emerald-600" onClick={() => setIsMobileMenuOpen(true)}><Menu size={24}/></button>
-            <h2 className="text-xl lg:text-2xl font-black text-slate-800 hidden sm:block tracking-wide">Teacher Center</h2>
+            <h2 className="text-xl lg:text-2xl font-black text-slate-800 hidden sm:flex items-center gap-2 tracking-wide">Teacher Center <span className="bg-slate-100 text-slate-500 text-[10px] px-2 py-1 rounded-md uppercase font-black">V2 Staging</span></h2>
           </div>
           <div className="flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-full border border-emerald-100">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div><span className="text-xs font-black text-emerald-700 uppercase tracking-widest">Server Aktif</span>
+            <ShieldCheck size={16} className="text-emerald-500" /><span className="text-xs font-black text-emerald-700 uppercase tracking-widest">Sistem Stabil</span>
           </div>
         </header>
         
@@ -336,23 +371,25 @@ export default function TeacherDashboard({ onLogout }) {
             </div>
           )}
 
-          {/* TAB BANK SOAL */}
+          {/* TAB BANK SOAL (V2 TERINTEGRASI) */}
           {activeTab === 'bank' && (
             <div className="space-y-6 max-w-6xl mx-auto print:max-w-full">
               <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
               
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 print:hidden space-y-5">
-                <h3 className="text-xl font-black mb-2 text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4"><BookOpen className="text-emerald-500"/> Manajemen Bank Soal</h3>
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-100 pb-4">
+                  <h3 className="text-xl font-black text-slate-800 flex items-center gap-3"><BookOpen className="text-emerald-500"/> Manajemen Bank Soal V2</h3>
+                  <div className="flex gap-2">
+                    {/* TOMBOL DOWNLOAD TEMPLATE DAN IMPORT EXCEL TETAP AMAN DI SINI */}
+                    <button onClick={downloadTemplate} className="p-3 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl active:scale-95 shadow-sm transition-colors" title="Download Template Excel"><Download size={20}/></button>
+                    <button onClick={triggerImport} className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 rounded-xl active:scale-95 shadow-sm transition-colors" title="Import Excel"><Upload size={20}/></button>
+                    <button onClick={() => { setEditSoalId(null); setFormData(defaultForm); setShowModal(true); setPreviewMode(false); }} className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-colors"><Plus size={18}/> Ketik Soal Baru</button>
+                  </div>
+                </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   <select value={bankMapel} onChange={e => setBankMapel(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Mata Pelajaran --</option>{availableBankMapel.map(m => <option key={m}>{m}</option>)}</select>
                   <select value={bankKelas} onChange={e => setBankKelas(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Tingkatan Kelas --</option>{availableBankKelas.map(k => <option key={k}>{k}</option>)}</select>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4 border-t border-slate-100">
-                  <button onClick={downloadTemplate} className="w-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 p-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 shadow-sm transition-colors"><Download size={18}/> Template Excel</button>
-                  <button onClick={triggerImport} className="w-full bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 p-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 shadow-sm transition-colors"><Upload size={18}/> Import Excel</button>
-                  <button onClick={() => { setEditSoalId(null); setFormData(defaultForm); setShowModal(true); }} className="w-full bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-colors"><Plus size={18}/> Ketik Manual</button>
                 </div>
               </div>
 
@@ -366,12 +403,28 @@ export default function TeacherDashboard({ onLogout }) {
               <div className="space-y-4">
                 {filteredQuestions.map((q, i) => (
                   <div key={q.id} className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-6 justify-between print:border-b print:border-slate-300 print:shadow-none print:mb-4 print:pb-4 print:rounded-none break-inside-avoid">
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex gap-2 mb-4 print:hidden border-b border-slate-100 pb-4"><span className="text-xs font-black bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-lg border border-emerald-200">{q?.mapel}</span><span className="text-xs font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200">Tk. {q?.kelas}</span></div>
-                      <p className="font-bold text-lg mb-6 text-slate-800 leading-relaxed"><Latex>{`${i+1}. ${q?.pertanyaan || ''}`}</Latex></p>
+                      
+                      {/* V2: TAMPILAN GAMBAR DI DAFTAR SOAL */}
+                      {q?.gambar && (
+                        <div className="mb-4 max-w-sm overflow-hidden rounded-2xl border border-slate-100 shadow-inner">
+                          <img src={q.gambar} alt="Gambar Soal" className="w-full h-auto object-cover" />
+                        </div>
+                      )}
+
+                      <div className="font-bold text-lg mb-6 text-slate-800 leading-relaxed break-words flex">
+                        <span className="text-emerald-600 mr-2">{i+1}.</span>
+                        {/* V2: PENGAMAN LATEX */}
+                        <div className="flex-1"><Latex>{String(q?.pertanyaan || ' ')}</Latex></div>
+                      </div>
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-600 font-medium">
                         {['A','B','C','D'].map(opt => (
-                          <div key={opt} className={`p-4 rounded-2xl border print:border-none print:p-1 ${q?.kunci===opt?'bg-emerald-50 border-emerald-300 font-bold text-emerald-900 print:font-black print:text-black shadow-sm':'bg-slate-50 border-slate-200'}`}><Latex>{`${opt}. ${q[`opsi${opt}`]}`}</Latex></div>
+                          <div key={opt} className={`p-4 rounded-2xl border print:border-none print:p-1 flex break-words ${q?.kunci===opt?'bg-emerald-50 border-emerald-300 font-bold text-emerald-900 print:font-black print:text-black shadow-sm':'bg-slate-50 border-slate-200'}`}>
+                             <span className="mr-2 font-black">{opt}.</span>
+                             <div className="flex-1"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -525,7 +578,7 @@ export default function TeacherDashboard({ onLogout }) {
         </div>
       </main>
 
-      {/* MODAL POP-UP QR CODE DENGAN API */}
+      {/* MODAL POP-UP QR CODE */}
       {showQRModal && (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 z-[120] print:hidden">
           <div className="bg-white p-8 md:p-12 rounded-[3rem] w-full max-w-xl shadow-2xl flex flex-col items-center text-center transform transition-all animate-in zoom-in duration-300">
@@ -550,28 +603,93 @@ export default function TeacherDashboard({ onLogout }) {
         </div>
       )}
 
-      {/* MODAL TAMBAH/EDIT SOAL MANUAL */}
+      {/* MODAL TAMBAH/EDIT SOAL MANUAL (V2 PROPER EDITOR) */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[110] print:hidden">
-          <div className="bg-white p-6 md:p-8 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100">
-            <h2 className="text-xl font-black mb-6 text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4"><Edit className="text-emerald-500"/> {editSoalId ? 'Revisi Soal Ujian' : 'Ketik Soal Baru'}</h2>
-            <form onSubmit={handleAddOrEditSoal} className="space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Mata Pelajaran</label><input required value={formData.mapel} placeholder="Contoh: Matematika" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, mapel: e.target.value})} /></div>
-                <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Tingkat</label><input required value={formData.kelas} placeholder="Cth: 9" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 text-center focus:bg-white" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 z-[110] print:hidden">
+          <div className="bg-white p-6 md:p-8 rounded-[2.5rem] w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl border border-white/20">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b border-slate-100 pb-4 gap-4">
+              <h2 className="text-xl font-black text-slate-800 flex items-center gap-3">
+                <Edit className="text-emerald-500"/> {editSoalId ? 'Revisi Soal Ujian' : 'Ketik Soal Baru'}
+              </h2>
+              {/* V2: TOMBOL MODE PRATINJAU */}
+              <button type="button" onClick={() => setPreviewMode(!previewMode)} className={`px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition-all w-full sm:w-auto justify-center ${previewMode ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                {previewMode ? <Edit size={16}/> : <Eye size={16}/>} {previewMode ? 'Kembali ke Editor' : 'Pratinjau Soal'}
+              </button>
+            </div>
+
+            {previewMode ? (
+              // --- V2: MODE PRATINJAU (PREVIEW LATEX & GAMBAR) ---
+              <div className="p-4 sm:p-8 bg-slate-50 rounded-3xl border border-slate-200 space-y-6 animate-in fade-in zoom-in-95 duration-200">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  {formData.gambar && (
+                    <img src={formData.gambar} alt="Preview" className="mb-6 rounded-xl max-h-60 mx-auto object-cover border border-slate-100 shadow-sm" />
+                  )}
+                  <div className="text-lg font-bold text-slate-800 leading-relaxed break-words">
+                    <Latex>{String(formData.pertanyaan || 'Ketik pertanyaan untuk melihat pratinjau...')}</Latex>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {['A','B','C','D'].map(opt => (
+                    <div key={opt} className={`p-5 rounded-2xl border-2 bg-white transition-all break-words flex ${formData.kunci === opt ? 'border-emerald-500 bg-emerald-50/30' : 'border-slate-100'}`}>
+                      <span className={`font-black mr-3 ${formData.kunci === opt ? 'text-emerald-600' : 'text-slate-400'}`}>{opt}.</span>
+                      <div className="flex-1 font-medium text-slate-700">
+                        <Latex>{String(formData[`opsi${opt}`] || ' ')}</Latex>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              
-              <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Teks Pertanyaan (Gunakan $...$ untuk Rumus Math)</label><textarea required value={formData.pertanyaan} placeholder="Ketik soal di sini..." className="w-full p-5 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 min-h-[120px] leading-relaxed text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, pertanyaan: e.target.value})} /></div>
-              
-              <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Opsi Jawaban</label><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{['A','B','C','D'].map(opt => <div key={opt} className="relative"><span className="absolute left-4 top-4 font-black text-slate-400">{opt}.</span><input required value={formData[`opsi${opt}`]} className="w-full pl-10 pr-4 py-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 text-slate-800 focus:bg-white" onChange={e => setFormData({...formData, [`opsi${opt}`]: e.target.value})} /></div>)}</div></div>
-              
-              <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Kunci Jawaban Benar</label><select className="w-full p-4 border border-emerald-300 bg-emerald-50 text-emerald-800 font-black rounded-2xl outline-none cursor-pointer focus:border-emerald-500" value={formData.kunci} onChange={e => setFormData({...formData, kunci: e.target.value})}><option value="A">Opsi A</option><option value="B">Opsi B</option><option value="C">Opsi C</option><option value="D">Opsi D</option></select></div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-slate-100 mt-6">
-                <button type="button" onClick={() => { setShowModal(false); setEditSoalId(null); setFormData(defaultForm); }} className="w-full py-4 bg-slate-100 hover:bg-slate-200 rounded-2xl font-bold text-slate-600 active:scale-95 transition-colors cursor-pointer">Batalkan</button>
-                <button type="submit" className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black shadow-lg shadow-emerald-600/30 active:scale-95 transition-transform cursor-pointer">{editSoalId ? 'Simpan Revisi' : 'Tambahkan Soal'}</button>
-              </div>
-            </form>
+            ) : (
+              // --- MODE EDITOR FORM ---
+              <form onSubmit={handleAddOrEditSoal} className="space-y-5 animate-in fade-in duration-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Mata Pelajaran</label><input required value={formData.mapel} placeholder="Contoh: Matematika" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 focus:bg-white transition-colors" onChange={e => setFormData({...formData, mapel: e.target.value})} /></div>
+                  <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Tingkat</label><input required value={formData.kelas} placeholder="Cth: 9" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 font-bold text-slate-800 text-center focus:bg-white transition-colors" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
+                </div>
+
+                {/* V2: INPUT GAMBAR SOAL */}
+                <div className="relative">
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Link Gambar Soal (Opsional)</label>
+                  <div className="relative">
+                    <ImageIcon className="absolute left-4 top-4 text-slate-400" size={20}/>
+                    <input value={formData.gambar} placeholder="Paste URL gambar dari PostImage / Imgur..." className="w-full pl-12 pr-4 py-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 text-slate-800 focus:bg-white transition-colors font-medium" onChange={e => setFormData({...formData, gambar: e.target.value})} />
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-2 flex justify-between tracking-wider">
+                    <span>Teks Pertanyaan</span>
+                    <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-black">Pakai $...$ untuk Rumus Math</span>
+                  </label>
+                  <textarea required value={formData.pertanyaan} placeholder="Ketik soal di sini..." className="w-full p-5 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 min-h-[120px] leading-relaxed text-slate-800 focus:bg-white transition-colors" onChange={e => setFormData({...formData, pertanyaan: e.target.value})} />
+                </div>
+                
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Opsi Jawaban</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {['A','B','C','D'].map(opt => (
+                      <div key={opt} className="relative">
+                        <span className="absolute left-4 top-4 font-black text-emerald-500">{opt}.</span>
+                        <input required value={formData[`opsi${opt}`]} className="w-full pl-12 pr-4 py-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 text-slate-800 focus:bg-white transition-colors font-medium" onChange={e => setFormData({...formData, [`opsi${opt}`]: e.target.value})} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-center pt-4 border-t border-slate-100 mt-2">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Kunci Jawaban Benar</label>
+                    <select className="w-full p-4 border border-emerald-300 bg-emerald-50 text-emerald-800 font-black rounded-2xl outline-none cursor-pointer focus:border-emerald-500" value={formData.kunci} onChange={e => setFormData({...formData, kunci: e.target.value})}>
+                      <option value="A">Opsi A</option><option value="B">Opsi B</option><option value="C">Opsi C</option><option value="D">Opsi D</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-2 pt-6">
+                    <button type="button" onClick={() => { setShowModal(false); setEditSoalId(null); setFormData(defaultForm); setPreviewMode(false); }} className="w-full py-4 bg-slate-100 hover:bg-slate-200 rounded-2xl font-bold text-slate-600 active:scale-95 transition-colors cursor-pointer">Batalkan</button>
+                    <button type="submit" className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black shadow-lg shadow-emerald-600/30 active:scale-95 transition-transform cursor-pointer">{editSoalId ? 'Simpan Revisi' : 'Tambahkan Soal'}</button>
+                  </div>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

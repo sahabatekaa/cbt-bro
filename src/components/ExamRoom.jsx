@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { ref, onValue, update, push } from 'firebase/database';
-// TAMBAHAN IKON: Wifi dan WifiOff untuk indikator sinyal
 import { Timer, AlertTriangle, Book, ChevronLeft, ChevronRight, HelpCircle, Maximize, ShieldAlert, Landmark, Bell, Wifi, WifiOff } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
@@ -28,16 +27,11 @@ export default function ExamRoom({ studentData, onFinish }) {
   const [lastBroadcast, setLastBroadcast] = useState('');
   const [showBroadcast, setShowBroadcast] = useState(false);
 
-  // STATE BARU: INDIKATOR ONLINE/OFFLINE
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-
   const answersRef = useRef(answers);
 
   useEffect(() => { answersRef.current = answers; }, [answers]);
 
-  // ==========================================
-  // LISTENER STATUS KONEKSI INTERNET
-  // ==========================================
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -163,7 +157,6 @@ export default function ExamRoom({ studentData, onFinish }) {
     const newAns = { ...answers, [qId]: opt }; 
     setAnswers(newAns); localStorage.setItem(`${storageKey}_ans`, JSON.stringify(newAns));
     
-    // Hanya update ke Firebase jika sedang online
     if (isOnline) {
       update(ref(db, `live_students/${sid}`), { progress: Math.round((Object.keys(newAns).length / questions.length) * 100) })
         .catch(() => { /* Abaikan error jika terputus saat proses pengiriman */ });
@@ -176,7 +169,6 @@ export default function ExamRoom({ studentData, onFinish }) {
   };
 
   const submitExam = async () => {
-    // PROTEKSI: Cegah submit jika sedang offline
     if (!isOnline) {
       alert("🚨 KONEKSI TERPUTUS!\nSistem tidak dapat mengumpulkan jawaban karena Anda sedang offline. Mohon periksa kembali koneksi internet/WiFi Anda lalu coba lagi.\n\nJangan khawatir, semua jawaban Anda aman dan tidak akan hilang.");
       return;
@@ -271,7 +263,6 @@ export default function ExamRoom({ studentData, onFinish }) {
                 </p>
               </div>
               
-              {/* PENAMBAHAN INDIKATOR ONLINE/OFFLINE */}
               <div className="flex flex-col items-end gap-1">
                 <div className="flex items-center gap-1 sm:gap-2 bg-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-emerald-600 font-mono font-black text-lg sm:text-xl border border-emerald-100 shadow-sm">
                   <Timer size={20} className="text-emerald-500 hidden sm:block" />
@@ -288,7 +279,6 @@ export default function ExamRoom({ studentData, onFinish }) {
           </div>
         </header>
 
-        {/* NOTIFIKASI OFFLINE BESAR JIKA KONEKSI TERPUTUS */}
         {!isOnline && (
           <div className="bg-red-50 border-b border-red-200 p-2 text-center text-red-600 text-xs sm:text-sm font-bold shadow-inner">
              ⚠️ KONEKSI TERPUTUS! Anda masih bisa menjawab soal. Jawaban aman tersimpan di perangkat Anda.
@@ -304,13 +294,23 @@ export default function ExamRoom({ studentData, onFinish }) {
               Soal No. {currentIndex+1} / {questions.length}
             </span>
             
-            <p className="text-lg md:text-2xl font-semibold mb-8 text-slate-800 leading-relaxed"><Latex>{q.pertanyaan}</Latex></p>
+            {/* === V2: FITUR GAMBAR & PENGAMAN LATEX (DI LAYAR SISWA) === */}
+            {q.gambar && (
+              <div className="mb-6 flex justify-center">
+                <img src={q.gambar} alt="Gambar Soal Ujian" className="max-w-full max-h-80 rounded-2xl border border-slate-200 shadow-sm object-contain" />
+              </div>
+            )}
+            
+            <div className="text-lg md:text-2xl font-semibold mb-8 text-slate-800 leading-relaxed break-words">
+              <Latex>{String(q.pertanyaan || ' ')}</Latex>
+            </div>
             
             <div className="space-y-4">
               {['A','B','C','D'].map(opt => (
-                <button key={opt} onClick={() => handleSelect(q.id, opt)} className={`w-full text-left p-5 rounded-2xl border-2 transition-all flex items-center gap-5 ${answers[q.id]===opt ? 'bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-500/10 text-emerald-900 font-bold':'bg-white border-slate-200 hover:border-emerald-300 hover:bg-slate-50'}`}>
+                <button key={opt} onClick={() => handleSelect(q.id, opt)} className={`w-full text-left p-5 rounded-2xl border-2 transition-all flex items-start gap-4 break-words ${answers[q.id]===opt ? 'bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-500/10 text-emerald-900 font-bold':'bg-white border-slate-200 hover:border-emerald-300 hover:bg-slate-50'}`}>
                   <span className={`w-10 h-10 flex items-center justify-center rounded-xl font-black text-lg shrink-0 transition-colors ${answers[q.id]===opt?'bg-emerald-500 text-white shadow-inner':'bg-slate-100 text-slate-500 border border-slate-200'}`}>{opt}</span>
-                  <span className="flex-1 text-base md:text-lg"><Latex>{q[`opsi${opt}`]}</Latex></span>
+                  {/* V2: Pengaman Latex di Opsi Jawaban */}
+                  <div className="flex-1 text-base md:text-lg pt-1.5"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
                 </button>
               ))}
             </div>
