@@ -4,7 +4,7 @@ import { ref as dbRef, onValue, push, remove, update, set } from 'firebase/datab
 import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
-import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck, CheckSquare, Check } from 'lucide-react';
+import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck, CheckSquare, Check, Percent } from 'lucide-react';
 
 export default function TeacherDashboard({ onLogout }) {
   const APP_VERSION = "2.0.0";
@@ -22,7 +22,6 @@ export default function TeacherDashboard({ onLogout }) {
   const [showQRModal, setShowQRModal] = useState(false);
   const [activeQRToken, setActiveQRToken] = useState('');
   
-  // === STATE KOREKSI ESAI V3 ===
   const [showKoreksiModal, setShowKoreksiModal] = useState(false);
   const [koreksiSession, setKoreksiSession] = useState(null);
   const [essayStudents, setEssayStudents] = useState([]);
@@ -34,10 +33,13 @@ export default function TeacherDashboard({ onLogout }) {
   
   const fileInputRef = useRef(null);
 
+  // === STATE SESI & BOBOT V3 ===
   const [selectedMapelSesi, setSelectedMapelSesi] = useState('');
   const [kuotaPG, setKuotaPG] = useState(0);
   const [kuotaPGK, setKuotaPGK] = useState(0);
   const [kuotaEsai, setKuotaEsai] = useState(0);
+  const [bobotPG, setBobotPG] = useState(70);
+  const [bobotEsai, setBobotEsai] = useState(30);
 
   const [bankMapel, setBankMapel] = useState('');
   const [bankKelas, setBankKelas] = useState('');
@@ -146,19 +148,16 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
-  // === FUNGSI KOREKSI ESAI V3 ===
+  // === FUNGSI KOREKSI ESAI V3 DENGAN BOBOT ===
   const openKoreksiModal = (session) => {
     setKoreksiSession(session);
     
-    // Cari semua soal esai untuk sesi ini
     const eQs = myQuestions.filter(q => q.mapel === session.mapel && q.kelas === session.kelas && q.jenisSoal === 'ESAI');
     setEssayQuestions(eQs);
 
-    // Cari siswa yang ujian menggunakan token sesi ini
     const students = myLeaderboard.filter(s => s.token === session.token);
     setEssayStudents(students);
 
-    // Muat nilai esai yang sudah pernah dikoreksi (jika ada)
     const initScores = {};
     students.forEach(s => {
        if(s.essayScores) { Object.assign(initScores, s.essayScores); }
@@ -169,21 +168,29 @@ export default function TeacherDashboard({ onLogout }) {
   };
 
   const handleSaveKoreksi = async () => {
-    if(window.confirm("Simpan poin esai dan kalkulasi ulang nilai akhir semua siswa ini?")) {
+    if(window.confirm("Kalkulasi dan simpan Nilai Akhir semua siswa ini berdasarkan Bobot Sesi?")) {
+        const bPG = koreksiSession?.bobotPG !== undefined ? parseInt(koreksiSession.bobotPG) : (essayQuestions.length > 0 ? 70 : 100);
+        const bEsai = koreksiSession?.bobotEsai !== undefined ? parseInt(koreksiSession.bobotEsai) : (essayQuestions.length > 0 ? 30 : 0);
+
         const promises = essayStudents.map(student => {
-            let addedScore = 0;
+            let totalEssayScore = 0;
             const studentEssayScores = {};
             
-            // Hitung total poin esai per siswa
+            // Jumlahkan nilai semua soal esai milik siswa ini
             essayQuestions.forEach(q => {
                 const s = parseFloat(essayScores[`${student.id}_${q.id}`]) || 0;
-                addedScore += s;
+                totalEssayScore += s;
                 studentEssayScores[`${student.id}_${q.id}`] = s;
             });
             
-            // Logika Penambahan: Nilai Akhir = Nilai Objektif Asli + Poin Esai
+            // Hitung rata-rata nilai esai siswa (Skala 100)
+            const avgEssayScore = essayQuestions.length > 0 ? (totalEssayScore / essayQuestions.length) : 0;
+            
+            // Tarik nilai objektif dasar
             const objectiveScore = student.objectiveScore !== undefined ? student.objectiveScore : student.score;
-            const finalScore = objectiveScore + addedScore;
+            
+            // KALKULASI BOBOT (NILAI AKHIR)
+            const finalScore = Math.round((objectiveScore * bPG / 100) + (avgEssayScore * bEsai / 100));
 
             return update(dbRef(db, `leaderboard/${student.id}`), {
                 score: finalScore,
@@ -195,7 +202,7 @@ export default function TeacherDashboard({ onLogout }) {
 
         try {
             await Promise.all(promises);
-            alert("✅ Koreksi berhasil! Nilai Akhir siswa telah diperbarui secara otomatis.");
+            alert(`✅ Koreksi berhasil disimpan!\nNilai akhir telah dikalkulasi dengan komposisi:\nObjektif (${bPG}%) + Esai (${bEsai}%)`);
             setShowKoreksiModal(false);
         } catch (error) {
             alert("Terjadi kesalahan saat menyimpan data: " + error.message);
@@ -278,15 +285,21 @@ export default function TeacherDashboard({ onLogout }) {
     const k = document.getElementById('kelas_session').value; 
     const sk = document.getElementById('subkelas_session').value.toUpperCase(); 
     if(!t || !selectedMapelSesi || !k || !sk) return alert("Lengkapi data sesi!"); 
+
+    const bPG = parseInt(bobotPG) || 0;
+    const bEsai = parseInt(bobotEsai) || 0;
+    if (bPG + bEsai !== 100) return alert("Peringatan: Total Bobot PG dan Esai harus tepat 100%!");
     
     push(dbRef(db, 'exam_sessions'), { 
       token: t, mapel: selectedMapelSesi, kelas: k, subKelas: sk, status: 'open', 
       kuotaPG: parseInt(kuotaPG) || 0, kuotaPGK: parseInt(kuotaPGK) || 0, kuotaEsai: parseInt(kuotaEsai) || 0,
+      bobotPG: bPG, bobotEsai: bEsai,
       teacherEmail: currentUserEmail, timestamp: Date.now() 
     }); 
     
     document.getElementById('token_input').value = ''; 
     setKuotaPG(0); setKuotaPGK(0); setKuotaEsai(0);
+    setBobotPG(70); setBobotEsai(30);
     alert("Sesi Ujian Resmi Dibuka!"); 
   };
 
@@ -372,8 +385,8 @@ export default function TeacherDashboard({ onLogout }) {
                   </div>
                   
                   <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl space-y-3">
-                    <label className="text-xs font-black text-emerald-800 uppercase flex items-center gap-2"><Settings size={14}/> Kuota Tarik Soal (Acak)</label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <label className="text-xs font-black text-emerald-800 uppercase flex items-center gap-2"><Settings size={14}/> Kuota & Bobot Penilaian</label>
+                    <div className="grid grid-cols-3 gap-2 pb-2 border-b border-emerald-200/50">
                         <div>
                             <label className="text-[10px] font-bold text-slate-500 mb-1 block">Jml PG</label>
                             <input type="number" min="0" value={kuotaPG} onChange={e => setKuotaPG(e.target.value)} className="w-full p-2 border border-slate-200 rounded-xl text-center font-bold" />
@@ -385,6 +398,18 @@ export default function TeacherDashboard({ onLogout }) {
                         <div>
                             <label className="text-[10px] font-bold text-slate-500 mb-1 block">Jml Esai</label>
                             <input type="number" min="0" value={kuotaEsai} onChange={e => setKuotaEsai(e.target.value)} className="w-full p-2 border border-slate-200 rounded-xl text-center font-bold" />
+                        </div>
+                    </div>
+                    
+                    {/* INPUT BOBOT NILAI */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                        <div>
+                            <label className="text-[10px] font-black text-emerald-700 mb-1 block flex items-center gap-1"><Percent size={12}/> Bobot PG/PGK</label>
+                            <input type="number" min="0" max="100" value={bobotPG} onChange={e => setBobotPG(e.target.value)} className="w-full p-2 border border-emerald-300 rounded-xl text-center font-black text-emerald-800 bg-emerald-100/50 shadow-inner outline-none focus:border-emerald-500" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-emerald-700 mb-1 block flex items-center gap-1"><Percent size={12}/> Bobot Esai</label>
+                            <input type="number" min="0" max="100" value={bobotEsai} onChange={e => setBobotEsai(e.target.value)} className="w-full p-2 border border-emerald-300 rounded-xl text-center font-black text-emerald-800 bg-emerald-100/50 shadow-inner outline-none focus:border-emerald-500" />
                         </div>
                     </div>
                   </div>
@@ -407,12 +432,17 @@ export default function TeacherDashboard({ onLogout }) {
                             <h4 className="text-3xl font-black font-mono tracking-widest text-slate-800">{s.token}</h4>
                             <span className={`p-2 rounded-xl shadow-sm ${s.status==='open'?'bg-emerald-100 text-emerald-600 border border-emerald-200':'bg-red-100 text-red-600 border border-red-200'}`}>{s.status==='open'?<Unlock size={20}/>:<Lock size={20}/>}</span>
                           </div>
-                          <div className="flex flex-wrap gap-2 mb-4">
+                          <div className="flex flex-wrap gap-2 mb-3">
                             <span className="text-xs font-black bg-emerald-500 text-white px-3 py-1.5 rounded-lg shadow-sm">{s.mapel}</span>
                             <span className="text-xs font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200">Kls: {s.kelas}-{s.subKelas}</span>
                           </div>
-                          <div className="flex gap-2 mb-6 text-[10px] font-black text-slate-500 bg-slate-100 p-2 rounded-lg border border-slate-200">
-                             <span>PG: {s.kuotaPG || 0}</span> | <span>PGK: {s.kuotaPGK || 0}</span> | <span>Esai: {s.kuotaEsai || 0}</span>
+                          <div className="flex flex-col gap-1 mb-6">
+                             <div className="text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-1.5 rounded-lg border border-slate-200 flex justify-between">
+                                <span>PG: {s.kuotaPG || 0}</span> <span>PGK: {s.kuotaPGK || 0}</span> <span>Esai: {s.kuotaEsai || 0}</span>
+                             </div>
+                             <div className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded-lg border border-emerald-200 flex justify-between">
+                                <span>BOBOT PG: {s.bobotPG || 70}%</span> <span>BOBOT ESAI: {s.bobotEsai || 30}%</span>
+                             </div>
                           </div>
                         </div>
                         <div className="grid grid-cols-4 gap-2 border-t border-slate-100 pt-4">
@@ -422,7 +452,6 @@ export default function TeacherDashboard({ onLogout }) {
                           <button onClick={() => toggleSession(s.id, s.status)} className="col-span-2 bg-slate-50 text-slate-700 py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-2 border border-slate-200">{s.status==='open'?<Lock size={16}/>:<Unlock size={16}/>} Kunci</button>
                           <button onClick={() => delSession(s.id)} className="col-span-2 bg-red-50 text-red-600 py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-2 border border-red-100"><Trash2 size={16}/> Hapus</button>
 
-                          {/* Tombol Koreksi Esai Aktif Jika Sesi Ditutup ATAU Ada Kuota Esai */}
                           {(s.status === 'closed' || s.kuotaEsai > 0) && (
                             <button onClick={() => openKoreksiModal(s)} className="col-span-4 mt-2 bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 py-3 rounded-xl text-xs font-black flex justify-center items-center gap-2 transition-colors">
                               <CheckSquare size={16}/> KOREKSI ESAI SERENTAK
@@ -524,7 +553,6 @@ export default function TeacherDashboard({ onLogout }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap gap-2 mb-4 border-b border-slate-100 pb-4">
                         <span className="text-xs font-black bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-lg border border-emerald-200">{q?.mapel} - Tk. {q?.kelas}</span>
-                        {/* Label Tipe Soal */}
                         <span className={`text-xs font-black px-3 py-1.5 rounded-lg border ${(!q.jenisSoal || q.jenisSoal === 'PG') ? 'bg-blue-50 text-blue-700 border-blue-200' : q.jenisSoal === 'PGK' ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-purple-50 text-purple-700 border-purple-200'}`}>
                            Tipe: {q.jenisSoal || 'PG'}
                         </span>
@@ -543,7 +571,6 @@ export default function TeacherDashboard({ onLogout }) {
                         <div className="flex-1"><Latex>{String(q?.pertanyaan || ' ')}</Latex></div>
                       </div>
 
-                      {/* Render Opsi Jika Bukan Esai */}
                       {(!q.jenisSoal || q.jenisSoal !== 'ESAI') && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-600 font-medium">
                             {['A','B','C','D'].map(opt => {
@@ -592,7 +619,6 @@ export default function TeacherDashboard({ onLogout }) {
                 </div>
               </div>
               
-              {/* CETAK: REKAP NILAI */}
               <div className={`${printMode === 'rekap' ? 'hidden print:block' : 'hidden'}`}>
                 <OfficialHeader />
                 <h3 className="text-center font-black text-lg mb-6 underline">DAFTAR NILAI UJIAN SISWA</h3>
@@ -610,7 +636,6 @@ export default function TeacherDashboard({ onLogout }) {
                 <div className="flex justify-end mt-12 text-center"><div className="w-64"><p>Simalungun, {new Date().toLocaleDateString('id-ID')}<br/>Guru Bidang Studi,</p><br/><br/><br/><p className="font-bold underline uppercase">{teacherProfile?.name}</p></div></div>
               </div>
 
-              {/* CETAK: BERITA ACARA */}
               <div className={`${printMode === 'berita_acara' ? 'hidden print:block' : 'hidden'}`}>
                 <OfficialHeader />
                 <h3 className="text-center font-black text-lg mb-8 underline tracking-wide">BERITA ACARA PELAKSANAAN UJIAN CBT</h3>
@@ -635,7 +660,6 @@ export default function TeacherDashboard({ onLogout }) {
                 </div>
               </div>
 
-              {/* CETAK: DAFTAR HADIR */}
               <div className={`${printMode === 'daftar_hadir' ? 'hidden print:block' : 'hidden'}`}>
                 <OfficialHeader />
                 <h3 className="text-center font-black text-lg mb-6 underline">DAFTAR HADIR PESERTA UJIAN</h3>
@@ -670,7 +694,7 @@ export default function TeacherDashboard({ onLogout }) {
                     <div className="flex items-end justify-between mt-2">
                       <div className="flex flex-col">
                          <p className="text-xs font-bold text-slate-500">{s?.mapel || '-'} • Kls: {s?.class || '-'}-{s?.subKelas || '-'}</p>
-                         <p className="text-[10px] font-bold text-slate-400 mt-1">Skor Objektif: {s.objectiveScore !== undefined ? s.objectiveScore : s.score}</p>
+                         <p className="text-[10px] font-bold text-slate-400 mt-1">Skor Objektif Asli: {s.objectiveScore !== undefined ? s.objectiveScore : s.score}</p>
                       </div>
                       <div className="text-3xl font-black text-emerald-600 bg-emerald-50 px-4 py-2 rounded-2xl border border-emerald-100 shadow-inner">{s?.score || 0}</div>
                     </div>
@@ -761,14 +785,15 @@ export default function TeacherDashboard({ onLogout }) {
                            <div key={siswa.id} className="bg-slate-50 border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-sm">
                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-4 mb-4 gap-4">
                                   <h3 className="text-xl font-black text-slate-800">{idx+1}. {siswa.name} <span className="text-sm text-slate-500 font-bold ml-2">({siswa.class}-{siswa.subKelas})</span></h3>
-                                  <div className="bg-emerald-100 text-emerald-800 px-4 py-2 rounded-xl font-black text-sm border border-emerald-200">
-                                     Skor Objektif (PG/PGK): {siswa.objectiveScore !== undefined ? siswa.objectiveScore : siswa.score}
+                                  <div className="bg-emerald-100 text-emerald-800 px-4 py-2 rounded-xl font-black text-sm border border-emerald-200 flex flex-col items-end">
+                                     <span>Skor Objektif: {siswa.objectiveScore !== undefined ? siswa.objectiveScore : siswa.score}</span>
+                                     <span className="text-[10px] text-emerald-600">Akan dikali Bobot {koreksiSession?.bobotPG || 70}%</span>
                                   </div>
                                </div>
                                
                                <div className="space-y-4">
                                   {essayQuestions.map((q, qIdx) => (
-                                      <div key={q.id} className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-col md:flex-row gap-4">
+                                      <div key={q.id} className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-col md:flex-row gap-4 hover:border-emerald-300 transition-colors">
                                           <div className="flex-1">
                                              <p className="text-sm font-bold text-slate-500 mb-2">Pertanyaan Esai No {qIdx+1}:</p>
                                              <div className="text-slate-800 font-medium mb-4"><Latex>{String(q.pertanyaan || '')}</Latex></div>
@@ -779,13 +804,14 @@ export default function TeacherDashboard({ onLogout }) {
                                               </div>
                                           </div>
                                           <div className="w-full md:w-48 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-center items-center shrink-0">
-                                              <label className="text-[10px] font-black text-slate-500 uppercase mb-2 text-center tracking-wider">Beri Poin Tambahan</label>
+                                              <label className="text-[10px] font-black text-emerald-700 uppercase mb-2 text-center tracking-wider bg-emerald-100 px-2 py-1 rounded">Nilai (0-100)</label>
                                               <input 
                                                  type="number" 
                                                  min="0"
+                                                 max="100"
                                                  value={essayScores[`${siswa.id}_${q.id}`] || ''}
                                                  onChange={(e) => setEssayScores(prev => ({...prev, [`${siswa.id}_${q.id}`]: e.target.value}))}
-                                                 className="w-full text-center text-3xl font-black text-emerald-600 p-3 border border-slate-300 rounded-xl focus:border-emerald-500 outline-none shadow-inner"
+                                                 className="w-full text-center text-3xl font-black text-emerald-600 p-3 border border-slate-300 rounded-xl focus:border-emerald-500 outline-none shadow-inner bg-white"
                                                  placeholder="0"
                                               />
                                           </div>
