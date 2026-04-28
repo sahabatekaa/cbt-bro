@@ -3,12 +3,12 @@ import { db, auth } from '../firebase';
 import { ref, onValue, update, remove, set } from 'firebase/database';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import * as XLSX from 'xlsx'; 
-import { Activity, BookOpen, Users, LogOut, ShieldAlert, CheckCircle, XCircle, Trash2, Edit, AlertTriangle, Menu, X, ShieldCheck, Lock, UserCog, Plus, Crown, Download, Settings, KeyRound, Landmark, Zap, ImageIcon, Eye } from 'lucide-react';
+import { Activity, BookOpen, Users, LogOut, ShieldAlert, CheckCircle, XCircle, Trash2, Edit, AlertTriangle, Menu, X, ShieldCheck, Lock, UserCog, Plus, Crown, Download, Settings, KeyRound, Landmark, Zap, ImageIcon, Eye, FileText } from 'lucide-react';
 import Latex from 'react-latex-next';
 import 'katex/dist/katex.min.css';
 
 export default function SuperAdminDashboard({ onLogout }) {
-  // === KONFIGURASI V2 ===
+  // === KONFIGURASI V2/V3 ===
   const APP_VERSION = "2.0.0";
   const currentUserEmail = auth.currentUser?.email || 'admin@sekolah.com';
 
@@ -21,8 +21,12 @@ export default function SuperAdminDashboard({ onLogout }) {
   const [filterGuru, setFilterGuru] = useState('');
   const [filterMapel, setFilterMapel] = useState('');
   
-  // === FORM SOAL V2 DENGAN GAMBAR & PREVIEW ===
-  const defaultSoalForm = { mapel: '', kelas: '', pertanyaan: ' ', gambar: '', opsiA: ' ', opsiB: ' ', opsiC: ' ', opsiD: ' ', kunci: 'A' };
+  // === FORM SOAL V3 (PG, PGK, ESAI, WACANA) ===
+  const defaultSoalForm = { 
+    jenisSoal: 'PG', kodeWacana: '', teksWacana: '',
+    mapel: '', kelas: '', pertanyaan: ' ', gambar: '', 
+    opsiA: ' ', opsiB: ' ', opsiC: ' ', opsiD: ' ', kunci: 'A' 
+  };
   const [showEditSoalModal, setShowSoalModal] = useState(false);
   const [editSoalId, setEditSoalId] = useState(null);
   const [soalFormData, setSoalFormData] = useState(defaultSoalForm);
@@ -60,7 +64,7 @@ export default function SuperAdminDashboard({ onLogout }) {
   const availableMapelSoal = [...new Set(data.bank.map(q => q?.mapel).filter(Boolean))];
   const filteredSoal = data.bank.filter(q => (filterGuru === '' || q?.teacherEmail === filterGuru) && (filterMapel === '' || q?.mapel === filterMapel));
 
-  // === FITUR MASTER KENDALI GLOBAL V2 ===
+  // === FITUR MASTER KENDALI GLOBAL ===
   const triggerGlobalUpdate = () => {
     if(window.confirm(`🚀 OTORITAS TERTINGGI: RILIS UPDATE V2\n\nApakah Anda yakin ingin menyalakan saklar Global Sync?\nIni akan memaksa SELURUH HP Siswa dan Guru yang sedang online untuk memuat ulang sistem ke Versi ${APP_VERSION} secara serentak.`)) {
       set(ref(db, 'settings/activeVersion'), APP_VERSION)
@@ -81,10 +85,8 @@ export default function SuperAdminDashboard({ onLogout }) {
   const handleUpdateGuru = (e) => { e.preventDefault(); update(ref(db, `users/${editGuruId}`), { name: guruFormData.name, email: guruFormData.email }); alert("Data Guru Diperbarui!"); setShowGuruModal(false); };
 
   const handleResetPassword = (email) => {
-    if (window.confirm(`Kirim instruksi reset kata sandi ke email: ${email}?\n\nGuru tersebut akan menerima link resmi dari sistem untuk membuat sandi baru.`)) {
-      sendPasswordResetEmail(auth, email)
-        .then(() => alert("✅ Link Reset Sandi Berhasil Dikirim!\nSilakan minta Guru tersebut mengecek kotak masuk (atau folder spam) di email mereka."))
-        .catch((error) => alert("❌ Gagal Mengirim: " + error.message));
+    if (window.confirm(`Kirim instruksi reset kata sandi ke email: ${email}?`)) {
+      sendPasswordResetEmail(auth, email).then(() => alert("✅ Link Reset Sandi Berhasil Dikirim!")).catch((error) => alert("❌ Gagal Mengirim: " + error.message));
     }
   };
 
@@ -98,52 +100,49 @@ export default function SuperAdminDashboard({ onLogout }) {
   const forceCloseSession = (id) => { if(window.confirm("KUNCI PAKSA sesi ini?")) update(ref(db, `exam_sessions/${id}`), { status: 'closed' }); };
   const deleteSoalGlobal = (id) => { if(window.confirm("Hapus soal ini dari PUSAT?")) remove(ref(db, `bank_soal/${id}`)); };
 
-  // V2: Buka Edit Soal dengan data gambar
+  // === V3: FUNGSI EDIT SOAL ADMIN ===
   const openEditSoalModal = (q) => { 
     setSoalFormData({ 
-      mapel: q?.mapel||'', kelas: q?.kelas||'', pertanyaan: q?.pertanyaan||' ', 
-      gambar: q?.gambar||'', 
+      jenisSoal: q?.jenisSoal || 'PG', kodeWacana: q?.kodeWacana || '', teksWacana: q?.teksWacana || '',
+      mapel: q?.mapel||'', kelas: q?.kelas||'', pertanyaan: q?.pertanyaan||' ', gambar: q?.gambar||'', 
       opsiA: q?.opsiA||' ', opsiB: q?.opsiB||' ', opsiC: q?.opsiC||' ', opsiD: q?.opsiD||' ', kunci: q?.kunci||'A' 
     }); 
     setEditSoalId(q.id); 
     setShowSoalModal(true); 
     setPreviewMode(false);
   };
-  const handleUpdateSoal = (e) => { e.preventDefault(); update(ref(db, `bank_soal/${editSoalId}`), { ...soalFormData }); alert("Soal berhasil dimodifikasi oleh Admin!"); setShowSoalModal(false); setPreviewMode(false); };
 
-  const resetLiveStudents = () => {
-    if(window.confirm("🚨 PERINGATAN BAHAYA!\nSemua data siswa yang sedang Ujian/Live akan disapu bersih dari server. Pastikan tidak ada yang sedang ujian.\n\nLanjutkan?")) {
-      remove(ref(db, 'live_students'));
-      alert("Database Live Siswa berhasil dibersihkan.");
-    }
+  const handlePGKKeyToggle = (opt) => {
+    let currentKeys = soalFormData.kunci ? soalFormData.kunci.split(',') : [];
+    if (currentKeys.includes(opt)) currentKeys = currentKeys.filter(k => k !== opt);
+    else currentKeys.push(opt);
+    setSoalFormData({ ...soalFormData, kunci: currentKeys.sort().join(',') });
   };
 
-  const resetAllSessions = () => {
-    if(window.confirm("🚨 PERINGATAN BAHAYA!\nSemua token sesi ujian (termasuk yang dibuat guru) akan dihapus permanen.\n\nLanjutkan?")) {
-      remove(ref(db, 'exam_sessions'));
-      alert("Database Sesi Ujian berhasil direset.");
+  const handleUpdateSoal = (e) => { 
+    e.preventDefault(); 
+    const finalData = { ...soalFormData };
+    if (finalData.jenisSoal === 'ESAI') {
+        finalData.opsiA = ''; finalData.opsiB = ''; finalData.opsiC = ''; finalData.opsiD = ''; finalData.kunci = '';
     }
+    update(ref(db, `bank_soal/${editSoalId}`), finalData); 
+    alert("Soal berhasil dimodifikasi oleh Admin!"); 
+    setShowSoalModal(false); 
+    setPreviewMode(false); 
   };
-  
-  const resetRekapNilai = () => {
-    if(window.confirm("🚨 KONFIRMASI PENGHAPUSAN!\nPastikan Anda sudah men-download Rekap Master (Excel) sebelum melakukan ini.\n\nSemua data nilai saat ini akan dihapus permanen untuk mempersiapkan database bagi jadwal ujian selanjutnya.\n\nLanjutkan bersihkan rekap nilai?")) {
-      remove(ref(db, 'leaderboard'));
-      alert("Database Rekap Nilai berhasil dikosongkan. Sistem siap untuk ujian berikutnya!");
-    }
-  };
+
+  const resetLiveStudents = () => { if(window.confirm("🚨 Hapus semua data Live Siswa?")) { remove(ref(db, 'live_students')); alert("Data dibersihkan."); } };
+  const resetAllSessions = () => { if(window.confirm("🚨 Hapus semua sesi ujian?")) { remove(ref(db, 'exam_sessions')); alert("Data direset."); } };
+  const resetRekapNilai = () => { if(window.confirm("🚨 Hapus permanen semua rekap nilai? Pastikan sudah di-download!")) { remove(ref(db, 'leaderboard')); alert("Database Nilai kosong."); } };
 
   const downloadMasterRecap = () => {
-    if (!data.lead || data.lead.length === 0) {
-      return alert("Belum ada data nilai yang masuk ke pusat.");
-    }
+    if (!data.lead || data.lead.length === 0) return alert("Belum ada data nilai.");
     try {
       const ws = XLSX.utils.json_to_sheet(data.lead);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Rekap Master");
       XLSX.writeFile(wb, `MASTER_REKAP_CBT_DARMAPERTIWI_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
-    } catch(err) {
-      alert("Gagal mengunduh rekap master: " + err.message);
-    }
+    } catch(err) { alert("Gagal mengunduh rekap master: " + err.message); }
   };
 
   const NavItem = ({ tab, icon: Icon, label, badge }) => (
@@ -169,7 +168,6 @@ export default function SuperAdminDashboard({ onLogout }) {
           <NavItem tab="guru" icon={Users} label="Manajemen Personalia" badge={pendingTeachers.length} />
         </nav>
         
-        {/* TOMBOL ZAP GLOBAL SYNC V2 */}
         <div className="p-4 border-t border-slate-800">
            <button onClick={triggerGlobalUpdate} className="w-full flex items-center justify-center gap-2 p-4 bg-amber-500 hover:bg-amber-400 text-black rounded-xl font-black text-sm shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all active:scale-95 uppercase tracking-tighter">
               <Zap size={20}/> RILIS UPDATE GLOBAL
@@ -249,16 +247,24 @@ export default function SuperAdminDashboard({ onLogout }) {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {activeSessions.map(s => (
-                      <div key={s.id} className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-lg flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:border-amber-500/30 transition-colors">
-                        <div>
-                          <p className="font-black font-mono text-2xl text-amber-400 mb-1">{s?.token}</p>
-                          <p className="font-bold text-slate-400 text-sm">{s?.teacherEmail}</p>
-                          <div className="flex flex-wrap gap-2 mt-3">
-                            <span className="text-xs font-black text-slate-900 bg-amber-500 px-3 py-1 rounded-md">{s?.mapel}</span>
-                            <span className="text-xs font-bold text-slate-300 bg-slate-800 px-3 py-1 rounded-md border border-slate-700">Tingkat {s?.kelas}-{s?.subKelas}</span>
+                      <div key={s.id} className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-lg flex flex-col justify-between gap-4 hover:border-amber-500/30 transition-colors">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-black font-mono text-2xl text-amber-400 mb-1">{s?.token}</p>
+                            <p className="font-bold text-slate-400 text-sm">{s?.teacherEmail}</p>
                           </div>
+                          <button onClick={() => forceCloseSession(s.id)} className="bg-red-950/50 text-red-500 hover:bg-red-600 hover:text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-red-900/50 shadow-md transition-all active:scale-95"><Lock size={14}/> Kunci Paksa</button>
                         </div>
-                        <button onClick={() => forceCloseSession(s.id)} className="w-full sm:w-auto bg-red-950/50 text-red-500 hover:bg-red-600 hover:text-white px-5 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 border border-red-900/50 shadow-md transition-all active:scale-95"><Lock size={18}/> Kunci Paksa</button>
+                        <div className="flex flex-wrap gap-2">
+                            <span className="text-xs font-black text-slate-900 bg-amber-500 px-3 py-1.5 rounded-md">{s?.mapel}</span>
+                            <span className="text-xs font-bold text-slate-300 bg-slate-800 px-3 py-1.5 rounded-md border border-slate-700">Tk. {s?.kelas}-{s?.subKelas}</span>
+                        </div>
+                        {/* V3: Tampilkan Info Kuota di Radar Admin */}
+                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800 flex gap-3 text-[10px] font-bold text-slate-400">
+                           <span className="text-blue-400">PG: {s.kuotaPG || 0}</span>
+                           <span className="text-orange-400">PGK: {s.kuotaPGK || 0}</span>
+                           <span className="text-purple-400">Esai: {s.kuotaEsai || 0}</span>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -270,7 +276,7 @@ export default function SuperAdminDashboard({ onLogout }) {
           {/* TAB BANK SOAL PUSAT */}
           {activeTab === 'bank' && (
             <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
-              <h3 className="text-2xl font-black text-white flex items-center gap-3"><BookOpen className="text-amber-500"/> Gudang Data Soal V2</h3>
+              <h3 className="text-2xl font-black text-white flex items-center gap-3"><BookOpen className="text-amber-500"/> Gudang Data Soal V3</h3>
               <div className="bg-slate-900 p-5 rounded-3xl shadow-lg border border-slate-800 flex flex-col sm:flex-row gap-4">
                 <select value={filterGuru} onChange={e => setFilterGuru(e.target.value)} className="flex-1 p-4 border border-slate-700 rounded-xl bg-slate-950 font-bold text-white outline-none focus:border-amber-500"><option value="">-- Semua Pencipta Soal --</option>{availableGuruSoal.map(g => <option key={g}>{g}</option>)}</select>
                 <select value={filterMapel} onChange={e => setFilterMapel(e.target.value)} className="flex-1 p-4 border border-slate-700 rounded-xl bg-slate-950 font-bold text-white outline-none focus:border-amber-500"><option value="">-- Semua Bidang Studi --</option>{availableMapelSoal.map(m => <option key={m}>{m}</option>)}</select>
@@ -283,27 +289,45 @@ export default function SuperAdminDashboard({ onLogout }) {
                       <div className="flex flex-wrap gap-2 mb-4 border-b border-slate-800 pb-4">
                         <span className="text-xs font-black bg-amber-500 text-black px-3 py-1.5 rounded-md">{q?.teacherEmail}</span>
                         <span className="text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-md">{q?.mapel} (Tk. {q?.kelas})</span>
+                        
+                        {/* V3: Label Tipe Soal di Admin */}
+                        <span className={`text-xs font-black px-3 py-1.5 rounded-md border ${(!q.jenisSoal || q.jenisSoal === 'PG') ? 'bg-blue-900/40 text-blue-400 border-blue-800/50' : q.jenisSoal === 'PGK' ? 'bg-orange-900/40 text-orange-400 border-orange-800/50' : 'bg-purple-900/40 text-purple-400 border-purple-800/50'}`}>
+                           Tipe: {q.jenisSoal || 'PG'}
+                        </span>
+                        {q.kodeWacana && <span className="text-xs font-black bg-slate-950 text-white px-3 py-1.5 rounded-md border border-slate-700">Wacana: {q.kodeWacana}</span>}
                       </div>
                       
-                      {/* V2: Render Gambar jika ada */}
                       {q?.gambar && (
                         <div className="mb-4 max-w-xs overflow-hidden rounded-xl border border-slate-700">
                           <img src={q.gambar} alt="Gambar Soal" className="w-full h-auto object-cover opacity-80 hover:opacity-100 transition-opacity" />
                         </div>
                       )}
 
+                      {/* V3: Tampilkan Teks Wacana di Admin */}
+                      {q?.teksWacana && (
+                         <div className="mb-4 p-4 bg-slate-950 border-l-4 border-slate-600 rounded-r-xl text-sm font-medium text-slate-400">
+                             <Latex>{String(q.teksWacana)}</Latex>
+                         </div>
+                      )}
+
                       <div className="font-bold text-lg mb-6 text-white leading-relaxed break-words flex">
                          <span className="text-amber-500 mr-2">{i+1}.</span>
                          <div className="flex-1"><Latex>{String(q?.pertanyaan || ' ')}</Latex></div>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-400 font-medium">
-                        {['A','B','C','D'].map(opt => (
-                          <div key={opt} className={`p-4 rounded-xl border flex break-words ${q?.kunci===opt?'bg-amber-500/10 border-amber-500/50 text-amber-400 font-bold':'border-slate-800 bg-slate-950'}`}>
-                             <span className="mr-2 font-black">{opt}.</span>
-                             <div className="flex-1"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
+                      
+                      {/* V3: Jangan Render Opsi Jika Esai */}
+                      {(!q.jenisSoal || q.jenisSoal !== 'ESAI') && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-400 font-medium">
+                            {['A','B','C','D'].map(opt => {
+                              const isKey = q.jenisSoal === 'PGK' ? (q.kunci && q.kunci.includes(opt)) : q.kunci === opt;
+                              return (
+                              <div key={opt} className={`p-4 rounded-xl border flex break-words ${isKey ?'bg-amber-500/10 border-amber-500/50 text-amber-400 font-bold':'border-slate-800 bg-slate-950'}`}>
+                                 <span className="mr-2 font-black">{opt}.</span>
+                                 <div className="flex-1"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
+                              </div>
+                            )})}
                           </div>
-                        ))}
-                      </div>
+                      )}
                     </div>
                     <div className="flex gap-3 self-end md:self-start md:border-l border-slate-800 md:pl-6 pt-4 md:pt-0 border-t md:border-t-0 w-full md:w-auto">
                       <button onClick={() => openEditSoalModal(q)} className="flex-1 md:flex-none flex items-center justify-center text-blue-400 bg-blue-950/30 border border-blue-900/50 hover:bg-blue-900 p-4 rounded-xl active:scale-95 transition-all shadow-md"><Edit size={20}/></button>
@@ -402,13 +426,13 @@ export default function SuperAdminDashboard({ onLogout }) {
         </div>
       )}
 
-      {/* MODAL EDIT SOAL PUSAT V2 DENGAN PREVIEW */}
+      {/* MODAL EDIT SOAL PUSAT V3 DENGAN PREVIEW */}
       {showEditSoalModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-[120]">
           <div className="bg-slate-900 p-6 md:p-8 rounded-[2.5rem] w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-800 shadow-2xl">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b border-slate-800 pb-4 gap-4">
               <h2 className="text-xl font-black text-white flex items-center gap-3">
-                <Edit className="text-amber-500"/> Intervensi Soal Pusat V2
+                <Edit className="text-amber-500"/> Intervensi Soal Pusat V3
               </h2>
               <button type="button" onClick={() => setPreviewMode(!previewMode)} className={`px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all w-full sm:w-auto justify-center ${previewMode ? 'bg-amber-500 text-black shadow-md' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
                 {previewMode ? <Edit size={16}/> : <Eye size={16}/>} {previewMode ? 'Kembali ke Editor' : 'Pratinjau Soal'}
@@ -419,36 +443,69 @@ export default function SuperAdminDashboard({ onLogout }) {
               // --- MODE PRATINJAU SUPERADMIN ---
               <div className="p-4 sm:p-8 bg-slate-950 rounded-3xl border border-slate-800 space-y-6 animate-in fade-in duration-200">
                 <div className="bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-800">
+                  <div className="mb-4">
+                     <span className="text-xs font-black bg-amber-500 text-black px-3 py-1 rounded-lg">Format: {soalFormData.jenisSoal}</span>
+                  </div>
                   {soalFormData.gambar && (
                     <img src={soalFormData.gambar} alt="Preview" className="mb-6 rounded-xl max-h-60 mx-auto object-cover border border-slate-700 shadow-sm" />
+                  )}
+                  {soalFormData.teksWacana && (
+                      <div className="mb-4 p-4 bg-slate-950 border-l-4 border-slate-600 rounded-r-xl text-sm font-medium text-slate-400">
+                         <Latex>{String(soalFormData.teksWacana)}</Latex>
+                      </div>
                   )}
                   <div className="text-lg font-bold text-white leading-relaxed break-words">
                     <Latex>{String(soalFormData.pertanyaan || 'Ketik pertanyaan untuk melihat pratinjau...')}</Latex>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {['A','B','C','D'].map(opt => (
-                    <div key={opt} className={`p-5 rounded-2xl border transition-all break-words flex ${soalFormData.kunci === opt ? 'border-amber-500 bg-amber-500/10' : 'border-slate-800 bg-slate-900'}`}>
-                      <span className={`font-black mr-3 ${soalFormData.kunci === opt ? 'text-amber-500' : 'text-slate-500'}`}>{opt}.</span>
-                      <div className="flex-1 font-medium text-slate-300">
-                        <Latex>{String(soalFormData[`opsi${opt}`] || ' ')}</Latex>
-                      </div>
+                
+                {soalFormData.jenisSoal !== 'ESAI' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {['A','B','C','D'].map(opt => {
+                        const isKey = soalFormData.jenisSoal === 'PGK' ? (soalFormData.kunci && soalFormData.kunci.includes(opt)) : soalFormData.kunci === opt;
+                        return (
+                        <div key={opt} className={`p-5 rounded-2xl border transition-all break-words flex ${isKey ? 'border-amber-500 bg-amber-500/10' : 'border-slate-800 bg-slate-900'}`}>
+                        <span className={`font-black mr-3 ${isKey ? 'text-amber-500' : 'text-slate-500'}`}>{opt}.</span>
+                        <div className="flex-1 font-medium text-slate-300"><Latex>{String(soalFormData[`opsi${opt}`] || ' ')}</Latex></div>
+                        </div>
+                    )})}
                     </div>
-                  ))}
-                </div>
+                )}
               </div>
             ) : (
               // --- MODE EDITOR SUPERADMIN ---
               <form onSubmit={handleUpdateSoal} className="space-y-5 animate-in fade-in duration-200">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-950 rounded-2xl border border-slate-800">
                   <div className="md:col-span-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Mata Pelajaran</label>
-                    <input required value={soalFormData.mapel} className="w-full p-4 bg-slate-950 border border-slate-800 text-white rounded-2xl font-bold focus:border-amber-500 outline-none" onChange={e => setSoalFormData({...soalFormData, mapel: e.target.value})} />
+                     <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Jenis Soal</label>
+                     <select value={soalFormData.jenisSoal} onChange={e => setSoalFormData({...soalFormData, jenisSoal: e.target.value})} className="w-full p-3 bg-slate-900 border border-slate-700 text-white rounded-xl font-bold focus:border-amber-500 outline-none cursor-pointer">
+                        <option value="PG">Pilihan Ganda (PG) Biasa</option>
+                        <option value="PGK">Pilihan Ganda Kompleks (PGK)</option>
+                        <option value="ESAI">Soal Esai</option>
+                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Tingkat</label>
-                    <input required value={soalFormData.kelas} className="w-full p-4 bg-slate-950 border border-slate-800 text-white rounded-2xl font-bold text-center focus:border-amber-500 outline-none" onChange={e => setSoalFormData({...soalFormData, kelas: e.target.value})} />
+                    <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Mata Pelajaran</label>
+                    <input required value={soalFormData.mapel} className="w-full p-3 bg-slate-900 border border-slate-700 text-white rounded-xl font-bold focus:border-amber-500 outline-none" onChange={e => setSoalFormData({...soalFormData, mapel: e.target.value})} />
                   </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Tingkat</label>
+                    <input required value={soalFormData.kelas} className="w-full p-3 bg-slate-900 border border-slate-700 text-white rounded-xl font-bold text-center focus:border-amber-500 outline-none" onChange={e => setSoalFormData({...soalFormData, kelas: e.target.value})} />
+                  </div>
+                </div>
+
+                <div className="p-4 bg-blue-950/20 border border-blue-900/40 rounded-2xl space-y-3">
+                    <div className="flex justify-between items-center">
+                        <label className="text-xs font-black text-blue-400 uppercase flex items-center gap-2"><FileText size={16}/> Pengikat Wacana / Teks Panjang (Opsional)</label>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                            <input value={soalFormData.kodeWacana} onChange={e => setSoalFormData({...soalFormData, kodeWacana: e.target.value})} placeholder="Kode (Cth: W-01)" className="w-full p-3 border border-slate-700 rounded-xl font-bold bg-slate-900 text-white outline-none focus:border-blue-500" />
+                        </div>
+                        <div className="md:col-span-3">
+                            <textarea value={soalFormData.teksWacana} onChange={e => setSoalFormData({...soalFormData, teksWacana: e.target.value})} placeholder="Ketik/Paste teks wacana bacaan di sini..." className="w-full p-3 border border-slate-700 rounded-xl font-medium bg-slate-900 text-white h-12 min-h-[48px] outline-none focus:border-blue-500" />
+                        </div>
+                    </div>
                 </div>
 
                 <div className="relative">
@@ -461,31 +518,47 @@ export default function SuperAdminDashboard({ onLogout }) {
 
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase mb-2 flex justify-between tracking-widest">
-                    <span>Teks Pertanyaan</span>
+                    <span>Teks Pertanyaan Utama</span>
                     <span className="text-[10px] bg-slate-800 text-amber-500 px-2 py-0.5 rounded font-black">Math = $...$</span>
                   </label>
                   <textarea required value={soalFormData.pertanyaan} className="w-full p-5 bg-slate-950 border border-slate-800 text-white rounded-2xl min-h-[120px] leading-relaxed focus:border-amber-500 outline-none" onChange={e => setSoalFormData({...soalFormData, pertanyaan: e.target.value})} />
                 </div>
 
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Opsi Jawaban</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {['A','B','C','D'].map(o => (
-                      <div key={o} className="relative">
-                        <span className="absolute left-4 top-4 font-black text-amber-500">{o}.</span>
-                        <input required value={soalFormData[`opsi${o}`]} className="w-full pl-12 pr-4 py-4 bg-slate-950 border border-slate-800 text-white rounded-2xl focus:border-amber-500 outline-none" onChange={e => setSoalFormData({...soalFormData, [`opsi${o}`]: e.target.value})} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                {soalFormData.jenisSoal !== 'ESAI' && (
+                    <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Opsi Jawaban & Kunci</label>
+                    {soalFormData.jenisSoal === 'PGK' ? (
+                        <div className="bg-orange-950/40 border border-orange-900/50 p-3 rounded-xl mb-3 text-xs font-bold text-orange-400">
+                            Mode PGK Aktif: Centang kotak di samping kiri opsi untuk menjadikannya Kunci Jawaban.
+                        </div>
+                    ) : null}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {['A','B','C','D'].map(o => {
+                           const isChecked = soalFormData.jenisSoal === 'PGK' ? (soalFormData.kunci && soalFormData.kunci.includes(o)) : false;
+                           return (
+                        <div key={o} className="flex gap-2 items-center">
+                            {soalFormData.jenisSoal === 'PGK' && (
+                                <input type="checkbox" checked={isChecked} onChange={() => handlePGKKeyToggle(o)} className="w-6 h-6 rounded cursor-pointer accent-amber-500" />
+                            )}
+                            <div className="relative flex-1">
+                                <span className="absolute left-4 top-4 font-black text-amber-500">{o}.</span>
+                                <input required value={soalFormData[`opsi${o}`]} className="w-full pl-12 pr-4 py-4 bg-slate-950 border border-slate-800 text-white rounded-2xl focus:border-amber-500 outline-none" onChange={e => setSoalFormData({...soalFormData, [`opsi${o}`]: e.target.value})} />
+                            </div>
+                        </div>
+                        )})}
+                    </div>
+                    </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-center pt-4 border-t border-slate-800 mt-2">
-                  <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Kunci Jawaban</label>
-                    <select value={soalFormData.kunci} className="w-full p-4 border border-amber-500/50 bg-amber-500/10 text-amber-500 font-black rounded-2xl outline-none cursor-pointer" onChange={e => setSoalFormData({...soalFormData, kunci: e.target.value})}>
-                      <option value="A">Opsi A</option><option value="B">Opsi B</option><option value="C">Opsi C</option><option value="D">Opsi D</option>
-                    </select>
-                  </div>
+                  {soalFormData.jenisSoal === 'PG' ? (
+                    <div>
+                        <label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-widest">Kunci Jawaban (Satu Pilihan)</label>
+                        <select value={soalFormData.kunci} className="w-full p-4 border border-amber-500/50 bg-amber-500/10 text-amber-500 font-black rounded-2xl outline-none cursor-pointer" onChange={e => setSoalFormData({...soalFormData, kunci: e.target.value})}>
+                        <option value="A">Opsi A</option><option value="B">Opsi B</option><option value="C">Opsi C</option><option value="D">Opsi D</option>
+                        </select>
+                    </div>
+                  ) : <div></div>}
                   <div className="flex gap-3 pt-6">
                     <button type="button" onClick={() => { setShowSoalModal(false); setPreviewMode(false); }} className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-bold active:scale-95 transition-colors">Tutup</button>
                     <button type="submit" className="flex-1 py-4 bg-amber-500 hover:bg-amber-400 text-black rounded-2xl font-black active:scale-95 shadow-[0_0_15px_rgba(245,158,11,0.2)] transition-colors">Terapkan Revisi</button>
