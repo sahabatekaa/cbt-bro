@@ -4,10 +4,9 @@ import { ref as dbRef, onValue, push, remove, update, set } from 'firebase/datab
 import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
-import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck, CheckSquare } from 'lucide-react';
+import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck, CheckSquare, Check } from 'lucide-react';
 
 export default function TeacherDashboard({ onLogout }) {
-  // === KONFIGURASI V2 ENTERPRISE ===
   const APP_VERSION = "2.0.0";
   const currentUserEmail = auth.currentUser?.email || 'guru@unknown.com';
   const isSuperAdmin = currentUserEmail === 'admin@sekolah.com';
@@ -23,16 +22,18 @@ export default function TeacherDashboard({ onLogout }) {
   const [showQRModal, setShowQRModal] = useState(false);
   const [activeQRToken, setActiveQRToken] = useState('');
   
-  // Modal Koreksi Esai Serentak
+  // === STATE KOREKSI ESAI V3 ===
   const [showKoreksiModal, setShowKoreksiModal] = useState(false);
   const [koreksiSession, setKoreksiSession] = useState(null);
+  const [essayStudents, setEssayStudents] = useState([]);
+  const [essayQuestions, setEssayQuestions] = useState([]);
+  const [essayScores, setEssayScores] = useState({});
 
   const [teacherProfile, setTeacherProfile] = useState({ name: 'Memuat...', email: currentUserEmail });
   const [tempProfileName, setTempProfileName] = useState(''); 
   
   const fileInputRef = useRef(null);
 
-  // Form Sesi Ujian (Dengan Kuota Soal)
   const [selectedMapelSesi, setSelectedMapelSesi] = useState('');
   const [kuotaPG, setKuotaPG] = useState(0);
   const [kuotaPGK, setKuotaPGK] = useState(0);
@@ -47,7 +48,6 @@ export default function TeacherDashboard({ onLogout }) {
   const [broadcastText, setBroadcastText] = useState(''); 
   const [printMode, setPrintMode] = useState('rekap'); 
 
-  // === FORM V2 (3 JENIS SOAL & WACANA) ===
   const defaultForm = { 
     jenisSoal: 'PG', kodeWacana: '', teksWacana: '', 
     mapel: '', kelas: '', pertanyaan: ' ', gambar: '', 
@@ -146,7 +146,63 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
-  // Handler Logika PGK (Checkbox)
+  // === FUNGSI KOREKSI ESAI V3 ===
+  const openKoreksiModal = (session) => {
+    setKoreksiSession(session);
+    
+    // Cari semua soal esai untuk sesi ini
+    const eQs = myQuestions.filter(q => q.mapel === session.mapel && q.kelas === session.kelas && q.jenisSoal === 'ESAI');
+    setEssayQuestions(eQs);
+
+    // Cari siswa yang ujian menggunakan token sesi ini
+    const students = myLeaderboard.filter(s => s.token === session.token);
+    setEssayStudents(students);
+
+    // Muat nilai esai yang sudah pernah dikoreksi (jika ada)
+    const initScores = {};
+    students.forEach(s => {
+       if(s.essayScores) { Object.assign(initScores, s.essayScores); }
+    });
+    setEssayScores(initScores);
+    
+    setShowKoreksiModal(true);
+  };
+
+  const handleSaveKoreksi = async () => {
+    if(window.confirm("Simpan poin esai dan kalkulasi ulang nilai akhir semua siswa ini?")) {
+        const promises = essayStudents.map(student => {
+            let addedScore = 0;
+            const studentEssayScores = {};
+            
+            // Hitung total poin esai per siswa
+            essayQuestions.forEach(q => {
+                const s = parseFloat(essayScores[`${student.id}_${q.id}`]) || 0;
+                addedScore += s;
+                studentEssayScores[`${student.id}_${q.id}`] = s;
+            });
+            
+            // Logika Penambahan: Nilai Akhir = Nilai Objektif Asli + Poin Esai
+            const objectiveScore = student.objectiveScore !== undefined ? student.objectiveScore : student.score;
+            const finalScore = objectiveScore + addedScore;
+
+            return update(dbRef(db, `leaderboard/${student.id}`), {
+                score: finalScore,
+                objectiveScore: objectiveScore,
+                essayScores: studentEssayScores,
+                isEssayGraded: true
+            });
+        });
+
+        try {
+            await Promise.all(promises);
+            alert("✅ Koreksi berhasil! Nilai Akhir siswa telah diperbarui secara otomatis.");
+            setShowKoreksiModal(false);
+        } catch (error) {
+            alert("Terjadi kesalahan saat menyimpan data: " + error.message);
+        }
+    }
+  };
+
   const handlePGKKeyToggle = (opt) => {
     let currentKeys = formData.kunci ? formData.kunci.split(',') : [];
     if (currentKeys.includes(opt)) currentKeys = currentKeys.filter(k => k !== opt);
@@ -156,7 +212,6 @@ export default function TeacherDashboard({ onLogout }) {
 
   const handleAddOrEditSoal = (e) => { 
     e.preventDefault(); 
-    // Bersihkan opsi jika Esai
     const finalData = { ...formData };
     if(finalData.jenisSoal === 'ESAI') {
         finalData.opsiA = ''; finalData.opsiB = ''; finalData.opsiC = ''; finalData.opsiD = ''; finalData.kunci = '';
@@ -175,7 +230,6 @@ export default function TeacherDashboard({ onLogout }) {
     setEditSoalId(q.id); setShowModal(true); setPreviewMode(false);
   };
   
-  // === IMPORT/EXPORT EXCEL V2 ===
   const downloadTemplate = () => { 
     try {
       const wsData = [
@@ -317,7 +371,6 @@ export default function TeacherDashboard({ onLogout }) {
                      <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Ruang/Sub</label><input id="subkelas_session" placeholder="Cth: A" required className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl uppercase font-bold text-center" /></div>
                   </div>
                   
-                  {/* PENGATURAN KUOTA SOAL V2 */}
                   <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl space-y-3">
                     <label className="text-xs font-black text-emerald-800 uppercase flex items-center gap-2"><Settings size={14}/> Kuota Tarik Soal (Acak)</label>
                     <div className="grid grid-cols-3 gap-2">
@@ -369,9 +422,9 @@ export default function TeacherDashboard({ onLogout }) {
                           <button onClick={() => toggleSession(s.id, s.status)} className="col-span-2 bg-slate-50 text-slate-700 py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-2 border border-slate-200">{s.status==='open'?<Lock size={16}/>:<Unlock size={16}/>} Kunci</button>
                           <button onClick={() => delSession(s.id)} className="col-span-2 bg-red-50 text-red-600 py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-2 border border-red-100"><Trash2 size={16}/> Hapus</button>
 
-                          {/* Tombol Koreksi Esai Aktif Jika Sesi Ditutup */}
-                          {s.status === 'closed' && (
-                            <button onClick={() => { setKoreksiSession(s); setShowKoreksiModal(true); }} className="col-span-4 mt-2 bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 py-3 rounded-xl text-xs font-black flex justify-center items-center gap-2 transition-colors">
+                          {/* Tombol Koreksi Esai Aktif Jika Sesi Ditutup ATAU Ada Kuota Esai */}
+                          {(s.status === 'closed' || s.kuotaEsai > 0) && (
+                            <button onClick={() => openKoreksiModal(s)} className="col-span-4 mt-2 bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 py-3 rounded-xl text-xs font-black flex justify-center items-center gap-2 transition-colors">
                               <CheckSquare size={16}/> KOREKSI ESAI SERENTAK
                             </button>
                           )}
@@ -381,6 +434,66 @@ export default function TeacherDashboard({ onLogout }) {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* TAB MONITOR */}
+          {activeTab === 'proctor' && (
+            <div className="space-y-6 max-w-6xl mx-auto">
+              <div className="bg-white border border-slate-200 p-5 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-center gap-3 font-black text-slate-800 text-lg"><Monitor className="text-emerald-500" size={26}/> Live Proctoring</div>
+                <select value={activeMonitorToken} onChange={(e) => setMonitor(e.target.value)} className="w-full sm:w-auto p-4 rounded-xl border border-slate-200 outline-none font-bold text-slate-700 bg-slate-50 cursor-pointer shadow-sm focus:border-emerald-500"><option value="">-- Pilih Sesi Token --</option>{mySessions.map(s => <option key={s.token} value={s.token}>{s.token} ({s.kelas}-{s.subKelas})</option>)}</select>
+              </div>
+
+              {!activeMonitorToken ? (
+                <div className="bg-white p-12 rounded-3xl border border-dashed border-slate-300 text-center flex flex-col items-center text-slate-400"><Filter size={56} className="mb-4 opacity-30"/><h3 className="font-bold text-xl text-slate-500">Silakan Pilih Token Sesi untuk Memantau</h3></div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-white p-5 rounded-3xl border-l-4 border-l-blue-500 shadow-sm"><p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-wider">Terhubung</p><p className="text-4xl font-black text-slate-800">{monitoredStudents.length}</p></div>
+                    <div className="bg-white p-5 rounded-3xl border-l-4 border-l-emerald-500 shadow-sm"><p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-wider">Selesai</p><p className="text-4xl font-black text-emerald-600">{monitoredStudents.filter(s => s.status === 'Selesai').length}</p></div>
+                    <div className="bg-white p-5 rounded-3xl border-l-4 border-l-red-500 shadow-sm"><p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-wider">Curang</p><p className="text-4xl font-black text-red-600">{monitoredStudents.filter(s => (s?.warnings || 0) > 0).length}</p></div>
+                    <div className="bg-slate-900 p-5 rounded-3xl flex flex-col justify-center items-center shadow-lg border border-slate-800">
+                       <button onClick={forceSubmitAll} className="w-full h-full bg-red-600 hover:bg-red-500 text-white rounded-xl font-black flex items-center justify-center gap-2 active:scale-95 transition-all flex-col p-2 text-center shadow-lg shadow-red-600/30">
+                          <ShieldAlert size={24} className="mb-1" /> Tarik Paksa Semua
+                       </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center">
+                    <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-blue-50 text-blue-600"><MessageSquare size={24}/></div>
+                    <div className="flex-1 w-full"><input value={broadcastText} onChange={e => setBroadcastText(e.target.value)} placeholder="Tulis pengumuman darurat ke layar siswa di ruangan ini..." className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-blue-500 focus:bg-white font-bold text-slate-700" /></div>
+                    <button onClick={sendBroadcast} className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-blue-600/30 tracking-widest"><Send size={18}/> SIARKAN</button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {monitoredStudents.map(s => (
+                      <div key={s.id} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col gap-4 hover:border-emerald-300 transition-colors">
+                        <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                          <div>
+                            <p className="font-black text-slate-800 text-lg leading-tight truncate">{s?.name || '-'}</p>
+                            <span className="inline-block mt-1 bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold border border-slate-200">{s?.class}-{s?.subKelas}</span>
+                          </div>
+                          {(s?.warnings || 0) > 0 && <span className="bg-red-50 text-red-600 text-xs font-black px-2 py-1 rounded border border-red-200 animate-pulse whitespace-nowrap">(!Tab {s.warnings}x)</span>}
+                        </div>
+                        
+                        <div>
+                          <div className="flex justify-between text-xs font-bold text-slate-500 mb-2"><span>Progress Ujian</span><span className="text-emerald-600">{s?.progress || 0}%</span></div>
+                          <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden shadow-inner"><div className="bg-emerald-500 h-full transition-all duration-500" style={{width:`${s?.progress || 0}%`}}></div></div>
+                        </div>
+
+                        <div className="flex gap-2 pt-2 border-t border-slate-100 mt-1">
+                          <button onClick={() => update(dbRef(db, `live_students/${s.id}`), { forceSubmit: true })} disabled={s.status === 'Selesai'} className="flex-1 text-xs bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 py-3 rounded-xl font-bold disabled:opacity-50 active:scale-95 transition-all shadow-sm">Tarik Mandiri</button>
+                          {(s?.warnings || 0) >= 3 && s?.status !== 'Selesai' && (
+                            <button onClick={() => update(dbRef(db, `live_students/${s.id}`), { warnings: 0, status: 'Online' })} className="flex-1 text-xs bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 py-3 rounded-xl font-bold active:scale-95 transition-all shadow-sm">Buka Kunci</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {monitoredStudents.length === 0 && <div className="col-span-full text-center p-12 bg-white rounded-3xl border border-dashed border-slate-300 text-slate-400 font-bold">Belum ada peserta yang login dengan token ini.</div>}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -434,7 +547,6 @@ export default function TeacherDashboard({ onLogout }) {
                       {(!q.jenisSoal || q.jenisSoal !== 'ESAI') && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-600 font-medium">
                             {['A','B','C','D'].map(opt => {
-                              // Logika Kunci untuk PG vs PGK
                               const isKey = q.jenisSoal === 'PGK' 
                                 ? (q.kunci && q.kunci.includes(opt)) 
                                 : q.kunci === opt;
@@ -458,31 +570,232 @@ export default function TeacherDashboard({ onLogout }) {
             </div>
           )}
 
-          {/* SISA TAB LAINNYA (Monitor, Rekap, Profil) TETAP SAMA SEPERTI KODE SEBELUMNYA */}
-          {/* ... (Tab Proctor, Recap, Profile sengaja dipersingkat di view ini agar code tidak terpotong, logikanya sama persis dengan yang Bos berikan) ... */}
+          {/* TAB REKAP NILAI & CETAK ADMINISTRASI */}
+          {activeTab === 'recap' && (
+            <div className="space-y-6 max-w-6xl mx-auto print:max-w-full">
+              <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 print:hidden space-y-5">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
+                  <h3 className="text-xl font-black text-slate-800 flex items-center gap-3"><ClipboardList className="text-emerald-500"/> Pusat Administrasi Ujian</h3>
+                  <button onClick={handleDeleteMyRecap} className="w-full md:w-auto bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-colors shadow-sm"><Trash2 size={18}/> Bersihkan Nilai Saya</button>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <select value={recapMapel} onChange={e => setRecapMapel(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Mapel --</option>{availableRecapMapel.map(m => <option key={m}>{m}</option>)}</select>
+                  <select value={recapKelas} onChange={e => setRecapKelas(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Tingkatan --</option>{availableRecapKelas.map(k => <option key={k}>{k}</option>)}</select>
+                  <select value={recapSubKelas} onChange={e => setRecapSubKelas(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Ruangan --</option>{availableRecapSubKelas.map(sk => <option key={sk}>{sk}</option>)}</select>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4 border-t border-slate-100">
+                  <button onClick={() => { setPrintMode('rekap'); setTimeout(() => window.print(), 300); }} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all tracking-wide"><BarChart size={18}/> Cetak Daftar Nilai</button>
+                  <button onClick={() => { setPrintMode('berita_acara'); setTimeout(() => window.print(), 300); }} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all"><FileText size={18}/> Berita Acara Ujian</button>
+                  <button onClick={() => { setPrintMode('daftar_hadir'); setTimeout(() => window.print(), 300); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all"><Users size={18}/> Daftar Hadir Siswa</button>
+                </div>
+              </div>
+              
+              {/* CETAK: REKAP NILAI */}
+              <div className={`${printMode === 'rekap' ? 'hidden print:block' : 'hidden'}`}>
+                <OfficialHeader />
+                <h3 className="text-center font-black text-lg mb-6 underline">DAFTAR NILAI UJIAN SISWA</h3>
+                <p className="mb-4 text-sm font-bold">Mata Pelajaran: {recapMapel || 'Semua'} <br/> Kelas/Ruang: {recapKelas || 'Semua'}-{recapSubKelas || 'Semua'} <br/> Nama Guru: {teacherProfile?.name}</p>
+                <table className="w-full text-left text-sm">
+                  <thead><tr><th className="py-2 px-3 w-12 text-center">No</th><th className="py-2 px-3">Nama Lengkap Siswa</th><th className="py-2 px-3">Mapel</th><th className="py-2 px-3 text-center">Kelas</th><th className="py-2 px-3 text-center">Skor Akhir</th></tr></thead>
+                  <tbody>
+                    {filteredLeaderboard.map((s, i) => (
+                      <tr key={s?.id || i}>
+                        <td className="py-2 px-3 text-center">{i+1}</td><td className="py-2 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td><td className="py-2 px-3">{s?.mapel || '-'}</td><td className="py-2 px-3 text-center">{s?.class}-{s?.subKelas}</td><td className="py-2 px-3 text-center font-black">{s?.score || 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="flex justify-end mt-12 text-center"><div className="w-64"><p>Simalungun, {new Date().toLocaleDateString('id-ID')}<br/>Guru Bidang Studi,</p><br/><br/><br/><p className="font-bold underline uppercase">{teacherProfile?.name}</p></div></div>
+              </div>
+
+              {/* CETAK: BERITA ACARA */}
+              <div className={`${printMode === 'berita_acara' ? 'hidden print:block' : 'hidden'}`}>
+                <OfficialHeader />
+                <h3 className="text-center font-black text-lg mb-8 underline tracking-wide">BERITA ACARA PELAKSANAAN UJIAN CBT</h3>
+                <div className="text-justify leading-loose font-medium text-sm">
+                  <p>Pada hari ini _________ tanggal ____ bulan ________________ tahun 20___, di SMP/MTS Darma Pertiwi Bah Butong telah diselenggarakan Ujian Berbasis Komputer (CBT) untuk:</p>
+                  <table className="w-full my-4 border-none !border-0">
+                    <tbody className="border-none">
+                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Mata Pelajaran</td><td className="border-none !p-0">: {recapMapel || '_________________________'}</td></tr>
+                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Kelas / Ruang</td><td className="border-none !p-0">: {recapKelas || '____'} - {recapSubKelas || '____'}</td></tr>
+                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Jumlah Peserta Terdaftar</td><td className="border-none !p-0">: {filteredLeaderboard.length} Orang</td></tr>
+                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Hadir / Mengikuti Ujian</td><td className="border-none !p-0">: ______ Orang</td></tr>
+                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Tidak Hadir (Absen)</td><td className="border-none !p-0">: ______ Orang</td></tr>
+                    </tbody>
+                  </table>
+                  <p className="mt-4">Catatan selama pelaksanaan ujian:</p>
+                  <div className="w-full h-24 border border-black mt-2 mb-8"></div>
+                  <p>Demikian berita acara ini dibuat dengan sesungguhnya untuk dapat dipergunakan sebagaimana mestinya.</p>
+                </div>
+                <div className="flex justify-between mt-12 text-center">
+                  <div className="w-64"><p>Pengawas Ruangan,</p><br/><br/><br/><p className="font-bold uppercase border-b border-black pb-1">_________________________</p><p className="text-xs">NIP. </p></div>
+                  <div className="w-64"><p>Guru Mata Pelajaran,</p><br/><br/><br/><p className="font-bold uppercase border-b border-black pb-1">{teacherProfile?.name}</p><p className="text-xs">NIP. </p></div>
+                </div>
+              </div>
+
+              {/* CETAK: DAFTAR HADIR */}
+              <div className={`${printMode === 'daftar_hadir' ? 'hidden print:block' : 'hidden'}`}>
+                <OfficialHeader />
+                <h3 className="text-center font-black text-lg mb-6 underline">DAFTAR HADIR PESERTA UJIAN</h3>
+                <p className="mb-4 text-sm font-bold">Mata Pelajaran: {recapMapel || '_________________'} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Kelas/Ruang: {recapKelas || '____'} - {recapSubKelas || '____'}</p>
+                <table className="w-full text-left text-sm">
+                  <thead><tr><th className="py-3 px-3 w-12 text-center">No</th><th className="py-3 px-3">Nama Lengkap Siswa</th><th className="py-3 px-3 text-center w-24">Kelas</th><th className="py-3 px-3 w-48 text-center">Tanda Tangan</th></tr></thead>
+                  <tbody>
+                    {filteredLeaderboard.map((s, i) => (
+                      <tr key={s?.id || i}><td className="py-3 px-3 text-center">{i+1}</td><td className="py-3 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td><td className="py-3 px-3 text-center">{s?.class}-{s?.subKelas}</td><td className="py-3 px-3"><span className="text-xs text-gray-400">{i+1}. </span></td></tr>
+                    ))}
+                    {[...Array(Math.max(0, 15 - filteredLeaderboard.length))].map((_, i) => (
+                      <tr key={`empty-${i}`}><td className="py-4"></td><td></td><td></td><td></td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 print:hidden">
+                {filteredLeaderboard.map((s, i) => (
+                  <div key={s?.id || i} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col hover:border-emerald-300 transition-colors relative overflow-hidden">
+                    {s.isEssayGraded && <div className="absolute -right-6 -top-6 bg-emerald-500 text-white text-[10px] font-black px-8 py-2 transform rotate-45 shadow-sm mt-8">ESAI DINILAI</div>}
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="bg-slate-800 text-white text-xs font-black px-2 py-0.5 rounded-md">#{i+1}</span>
+                        <p className="font-black text-slate-800 text-lg leading-tight truncate max-w-[150px] sm:max-w-[200px]">{s?.name || 'Anonim'}</p>
+                      </div>
+                      <button onClick={() => handleDeleteSingleRecap(s.id, s.name)} title="Hapus Data Ini" className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors active:scale-95">
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                    
+                    <div className="flex items-end justify-between mt-2">
+                      <div className="flex flex-col">
+                         <p className="text-xs font-bold text-slate-500">{s?.mapel || '-'} • Kls: {s?.class || '-'}-{s?.subKelas || '-'}</p>
+                         <p className="text-[10px] font-bold text-slate-400 mt-1">Skor Objektif: {s.objectiveScore !== undefined ? s.objectiveScore : s.score}</p>
+                      </div>
+                      <div className="text-3xl font-black text-emerald-600 bg-emerald-50 px-4 py-2 rounded-2xl border border-emerald-100 shadow-inner">{s?.score || 0}</div>
+                    </div>
+                  </div>
+                ))}
+                {filteredLeaderboard.length === 0 && <div className="col-span-full text-center p-12 bg-white rounded-3xl border border-dashed border-slate-300 text-slate-400 font-bold">Data nilai dari ujian Anda belum tersedia.</div>}
+              </div>
+            </div>
+          )}
+
+          {/* TAB PROFIL */}
+          {activeTab === 'profile' && (
+            <div className="max-w-2xl mx-auto print:hidden">
+              <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
+                <div className="flex items-center gap-4 border-b border-slate-100 pb-6 mb-6">
+                  <div className="w-20 h-20 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-700 font-black text-4xl uppercase shadow-inner shrink-0">{teacherProfile?.name?.charAt(0) || 'G'}</div>
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-800 tracking-tight">Pengaturan Profil</h3>
+                    <p className="text-sm font-bold text-slate-500 mt-1">Kelola identitas resmi Anda di sistem CBT.</p>
+                  </div>
+                </div>
+                
+                <form onSubmit={handleUpdateProfile} className="space-y-6">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Nama Lengkap beserta Gelar Akademik</label>
+                    <input required value={tempProfileName} onChange={(e) => setTempProfileName(e.target.value)} placeholder="Contoh: Susi Susanti, S.Pd., M.Si." className="w-full p-4 border border-slate-200 bg-slate-50 rounded-2xl outline-none focus:border-emerald-500 focus:bg-white font-bold text-slate-800 text-lg transition-colors shadow-inner" />
+                    <p className="text-xs text-slate-400 mt-2 font-medium">Nama ini akan digunakan secara otomatis sebagai tanda tangan di dokumen cetak PDF.</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase mb-2 block tracking-wider">Email Akun (Login)</label>
+                    <input disabled value={teacherProfile?.email || currentUserEmail} className="w-full p-4 border border-slate-200 bg-slate-100 rounded-2xl font-bold text-slate-500 cursor-not-allowed" />
+                  </div>
+                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black shadow-lg shadow-emerald-600/30 active:scale-95 transition-all tracking-widest flex justify-center items-center gap-2"><User size={20}/> SIMPAN PERUBAHAN</button>
+                </form>
+              </div>
+            </div>
+          )}
 
         </div>
       </main>
 
-      {/* MODAL KOREKSI ESAI SERENTAK (KERANGKA UI) */}
+      {/* MODAL POP-UP QR CODE */}
+      {showQRModal && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 z-[120] print:hidden">
+          <div className="bg-white p-8 md:p-12 rounded-[3rem] w-full max-w-xl shadow-2xl flex flex-col items-center text-center transform transition-all animate-in zoom-in duration-300">
+            <button onClick={() => setShowQRModal(false)} className="absolute top-6 right-6 p-2 bg-slate-100 hover:bg-red-100 text-slate-500 hover:text-red-600 rounded-full transition-colors"><X size={24}/></button>
+            <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-2">SCAN UNTUK MASUK</h2>
+            <p className="text-slate-500 font-bold mb-8">Buka kamera HP Anda dan arahkan ke kode QR ini.</p>
+            <div className="bg-white p-4 rounded-3xl border-8 border-emerald-500 shadow-xl mb-8 flex justify-center items-center">
+              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(window.location.origin + '/?token=' + activeQRToken)}`} alt="QR Code Sesi Ujian" className="w-[280px] h-[280px] object-contain" />
+            </div>
+            <div className="bg-slate-50 border border-slate-200 px-8 py-4 rounded-2xl w-full">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">ATAU GUNAKAN TOKEN</p>
+              <p className="text-4xl font-black font-mono text-emerald-600 tracking-[0.3em]">{activeQRToken}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KOREKSI ESAI SERENTAK V3 */}
       {showKoreksiModal && (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 z-[130] print:hidden">
-            <div className="bg-white p-6 md:p-8 rounded-[2.5rem] w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl">
-                <div className="flex justify-between items-center border-b border-slate-200 pb-4 mb-6">
-                    <div>
+            <div className="bg-white p-6 md:p-8 rounded-[2.5rem] w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl relative">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-4 mb-6 sticky top-0 bg-white z-10 pt-2">
+                    <div className="mb-4 md:mb-0">
                         <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3"><CheckSquare className="text-emerald-500"/> Koreksi Esai Serentak</h2>
-                        <p className="text-sm font-bold text-slate-500 mt-1">Sesi Token: {koreksiSession?.token} | Mapel: {koreksiSession?.mapel}</p>
+                        <p className="text-sm font-bold text-slate-500 mt-1">Sesi: {koreksiSession?.token} | Mapel: {koreksiSession?.mapel}</p>
                     </div>
-                    <button onClick={() => setShowKoreksiModal(false)} className="p-3 bg-slate-100 hover:bg-red-100 text-slate-600 hover:text-red-600 rounded-full"><X size={24}/></button>
+                    <div className="flex gap-2 w-full md:w-auto">
+                       <button onClick={handleSaveKoreksi} className="flex-1 md:flex-none px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black shadow-lg shadow-emerald-500/30 active:scale-95 transition-all flex justify-center items-center gap-2">
+                          <Check size={18}/> SIMPAN NILAI
+                       </button>
+                       <button onClick={() => setShowKoreksiModal(false)} className="p-3 bg-slate-100 hover:bg-red-100 text-slate-600 hover:text-red-600 rounded-xl transition-colors"><X size={24}/></button>
+                    </div>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 p-5 rounded-2xl mb-6">
-                    <p className="text-sm font-bold text-blue-800">Ruang Koreksi sedang disiapkan. Data jawaban siswa akan terhubung setelah logika penyimpanan di <code className="bg-white px-2 py-1 rounded text-blue-900">ExamRoom.jsx</code> kita sinkronisasikan pada tahap selanjutnya.</p>
-                </div>
-
-                <div className="flex justify-end mt-6">
-                    <button onClick={() => setShowKoreksiModal(false)} className="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold">Tutup Ruang Koreksi</button>
-                </div>
+                {essayQuestions.length === 0 ? (
+                    <div className="bg-amber-50 border border-amber-200 p-8 rounded-2xl text-center text-amber-800 font-bold">
+                        Tidak ada soal Esai pada mata pelajaran di sesi ini.
+                    </div>
+                ) : essayStudents.length === 0 ? (
+                    <div className="bg-blue-50 border border-blue-200 p-8 rounded-2xl text-center text-blue-800 font-bold">
+                        Belum ada siswa yang mengumpulkan ujian pada sesi ini.
+                    </div>
+                ) : (
+                    <div className="space-y-8 pb-10">
+                       {essayStudents.map((siswa, idx) => (
+                           <div key={siswa.id} className="bg-slate-50 border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-sm">
+                               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-4 mb-4 gap-4">
+                                  <h3 className="text-xl font-black text-slate-800">{idx+1}. {siswa.name} <span className="text-sm text-slate-500 font-bold ml-2">({siswa.class}-{siswa.subKelas})</span></h3>
+                                  <div className="bg-emerald-100 text-emerald-800 px-4 py-2 rounded-xl font-black text-sm border border-emerald-200">
+                                     Skor Objektif (PG/PGK): {siswa.objectiveScore !== undefined ? siswa.objectiveScore : siswa.score}
+                                  </div>
+                               </div>
+                               
+                               <div className="space-y-4">
+                                  {essayQuestions.map((q, qIdx) => (
+                                      <div key={q.id} className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-col md:flex-row gap-4">
+                                          <div className="flex-1">
+                                             <p className="text-sm font-bold text-slate-500 mb-2">Pertanyaan Esai No {qIdx+1}:</p>
+                                             <div className="text-slate-800 font-medium mb-4"><Latex>{String(q.pertanyaan || '')}</Latex></div>
+                                             
+                                             <p className="text-sm font-bold text-blue-500 mb-2 flex items-center gap-2"><MessageSquare size={16}/> Jawaban Siswa:</p>
+                                             <div className="bg-blue-50 p-4 rounded-xl text-slate-700 font-medium min-h-[60px] border border-blue-100 whitespace-pre-wrap">
+                                                {siswa.answers && siswa.answers[q.id] ? siswa.answers[q.id] : <span className="text-slate-400 italic">Kosong (Tidak dijawab)</span>}
+                                              </div>
+                                          </div>
+                                          <div className="w-full md:w-48 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-center items-center shrink-0">
+                                              <label className="text-[10px] font-black text-slate-500 uppercase mb-2 text-center tracking-wider">Beri Poin Tambahan</label>
+                                              <input 
+                                                 type="number" 
+                                                 min="0"
+                                                 value={essayScores[`${siswa.id}_${q.id}`] || ''}
+                                                 onChange={(e) => setEssayScores(prev => ({...prev, [`${siswa.id}_${q.id}`]: e.target.value}))}
+                                                 className="w-full text-center text-3xl font-black text-emerald-600 p-3 border border-slate-300 rounded-xl focus:border-emerald-500 outline-none shadow-inner"
+                                                 placeholder="0"
+                                              />
+                                          </div>
+                                      </div>
+                                  ))}
+                               </div>
+                           </div>
+                       ))}
+                    </div>
+                )}
             </div>
         </div>
       )}
@@ -534,7 +847,6 @@ export default function TeacherDashboard({ onLogout }) {
             ) : (
               // --- MODE EDITOR FORM ---
               <form onSubmit={handleAddOrEditSoal} className="space-y-5 animate-in fade-in duration-200">
-                {/* BLOK IDENTITAS SOAL */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-200">
                   <div className="md:col-span-2"><label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Jenis Soal</label>
                      <select value={formData.jenisSoal} onChange={e => setFormData({...formData, jenisSoal: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200 font-bold outline-none focus:border-emerald-500 cursor-pointer">
@@ -547,7 +859,6 @@ export default function TeacherDashboard({ onLogout }) {
                   <div><label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Tingkat / Kelas</label><input required value={formData.kelas} placeholder="Cth: 9" className="w-full p-3 border border-slate-200 rounded-xl font-bold text-center" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
                 </div>
 
-                {/* BLOK WACANA (OPSIONAL) */}
                 <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-2xl space-y-3">
                     <div className="flex justify-between items-center">
                         <label className="text-xs font-black text-blue-800 uppercase flex items-center gap-2"><FileText size={16}/> Pengikat Wacana / Teks Panjang (Opsional)</label>
@@ -574,17 +885,14 @@ export default function TeacherDashboard({ onLogout }) {
                   <textarea required value={formData.pertanyaan} placeholder="Ketik soal di sini..." className="w-full p-5 border border-slate-200 rounded-2xl min-h-[120px]" onChange={e => setFormData({...formData, pertanyaan: e.target.value})} />
                 </div>
                 
-                {/* OPSI JAWABAN (Disembunyikan jika ESAI) */}
                 {formData.jenisSoal !== 'ESAI' && (
                     <div>
                     <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Opsi Jawaban & Kunci</label>
-                    
                     {formData.jenisSoal === 'PGK' ? (
                         <div className="bg-orange-50 border border-orange-200 p-3 rounded-xl mb-3 text-xs font-bold text-orange-800">
                             Mode PGK Aktif: Centang kotak di samping kiri opsi untuk menjadikannya Kunci Jawaban (Bisa lebih dari 1).
                         </div>
                     ) : null}
-
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {['A','B','C','D'].map(opt => {
                            const isChecked = formData.jenisSoal === 'PGK' ? (formData.kunci && formData.kunci.includes(opt)) : false;
@@ -611,7 +919,7 @@ export default function TeacherDashboard({ onLogout }) {
                         <option value="A">Opsi A</option><option value="B">Opsi B</option><option value="C">Opsi C</option><option value="D">Opsi D</option>
                         </select>
                     </div>
-                  ) : <div></div> /* Spacer untuk PGK/Esai agar tombol simpan di kanan */}
+                  ) : <div></div>}
 
                   <div className="flex gap-2">
                     <button type="button" onClick={() => { setShowModal(false); setEditSoalId(null); setFormData(defaultForm); setPreviewMode(false); }} className="w-full py-4 bg-slate-100 hover:bg-slate-200 rounded-2xl font-bold text-slate-600">Batalkan</button>
