@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
-import { ref, onValue, update, push } from 'firebase/database';
-import { Timer, AlertTriangle, Book, ChevronLeft, ChevronRight, HelpCircle, Maximize, ShieldAlert, Landmark, Bell, Wifi, WifiOff } from 'lucide-react';
+import { ref, onValue, update, push, get } from 'firebase/database';
+import { Timer, AlertTriangle, Book, ChevronLeft, ChevronRight, HelpCircle, Maximize, ShieldAlert, Landmark, Bell, Wifi, WifiOff, Check } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
 
@@ -45,29 +45,88 @@ export default function ExamRoom({ studentData, onFinish }) {
     };
   }, []);
 
+  // === V3 LOGIC: SMART GROUPING, ACAK KUOTA, DAN PROPAGASI WACANA ===
   useEffect(() => {
-    onValue(ref(db, 'bank_soal'), (snap) => {
-      if (snap.val()) {
-        const allQ = Object.keys(snap.val()).map(k => ({ id: k, ...snap.val()[k] }));
-        const filtered = allQ.filter(q => q.mapel === studentData?.mapel && q.kelas === studentData?.class && q.teacherEmail === studentData?.teacherEmail);
-        
-        const savedOrder = localStorage.getItem(`${storageKey}_order`);
-        let finalQuestions = [];
+    if (!studentData?.token) return;
 
-        if (savedOrder) {
-          const orderIds = JSON.parse(savedOrder);
-          finalQuestions = orderIds.map(id => filtered.find(q => q.id === id)).filter(Boolean);
-          const newQuestions = filtered.filter(q => !orderIds.includes(q.id));
-          finalQuestions = [...finalQuestions, ...newQuestions];
-        } else {
-          finalQuestions = [...filtered].sort(() => Math.random() - 0.5);
-          const orderIds = finalQuestions.map(q => q.id);
-          localStorage.setItem(`${storageKey}_order`, JSON.stringify(orderIds));
+    // 1. Tarik Info Sesi untuk Kuota
+    onValue(ref(db, 'exam_sessions'), (sessionSnap) => {
+      let sessionInfo = null;
+      sessionSnap.forEach(s => { if (s.val().token === studentData.token) sessionInfo = s.val(); });
+      
+      const kPG = sessionInfo?.kuotaPG || 0;
+      const kPGK = sessionInfo?.kuotaPGK || 0;
+      const kEsai = sessionInfo?.kuotaEsai || 0;
+      const hasQuota = kPG > 0 || kPGK > 0 || kEsai > 0; // Cek jika pakai sistem V3 atau V1 (Tarik Semua)
+
+      // 2. Tarik Bank Soal
+      onValue(ref(db, 'bank_soal'), (snap) => {
+        if (snap.val()) {
+          const allQ = Object.keys(snap.val()).map(k => ({ id: k, ...snap.val()[k] }));
+          const filtered = allQ.filter(q => q.mapel === studentData?.mapel && q.kelas === studentData?.class && q.teacherEmail === studentData?.teacherEmail);
+          
+          const savedOrder = localStorage.getItem(`${storageKey}_order`);
+
+          if (savedOrder) {
+            // Siswa sudah punya susunan soal (Lanjut Ujian)
+            const orderIds = JSON.parse(savedOrder);
+            const finalQuestions = orderIds.map(id => filtered.find(q => q.id === id)).filter(Boolean);
+            setQuestions(finalQuestions);
+          } else {
+            // Siswa Baru Mulai: Algoritma Smart Grouping & Acak
+            const groups = {};
+            filtered.forEach(q => {
+              const kw = q.kodeWacana || `single_${q.id}`;
+              if (!groups[kw]) groups[kw] = [];
+              groups[kw].push(q);
+            });
+
+            // Propagasi teks wacana ke seluruh soal di grup yang sama (walau ditaruh di soal pertama saja oleh Guru)
+            Object.keys(groups).forEach(kw => {
+              if (kw.startsWith('single_')) return;
+              let groupText = '';
+              groups[kw].forEach(q => { if (q.teksWacana) groupText = q.teksWacana; });
+              if (groupText) { groups[kw].forEach(q => { q.teksWacana = groupText; }); }
+            });
+
+            // Mulai Tarik Kuota & Acak
+            const groupKeys = Object.keys(groups).sort(() => Math.random() - 0.5);
+            let selectedGroups = [];
+
+            if (!hasQuota) {
+               // V1 Backward Compatibility (Tarik Semua Jika Sesi Lama)
+               selectedGroups = groupKeys.map(k => groups[k]);
+            } else {
+               // V3 Kuota Logic
+               let pulledPG = 0, pulledPGK = 0, pulledEsai = 0;
+               for (let key of groupKeys) {
+                  const grp = groups[key];
+                  let countPG = 0, countPGK = 0, countEsai = 0;
+                  
+                  grp.forEach(q => {
+                     const t = q.jenisSoal || 'PG';
+                     if (t === 'PG') countPG++; else if (t === 'PGK') countPGK++; else if (t === 'ESAI') countEsai++;
+                  });
+
+                  if (pulledPG + countPG <= kPG && pulledPGK + countPGK <= kPGK && pulledEsai + countEsai <= kEsai) {
+                     selectedGroups.push(grp);
+                     pulledPG += countPG; pulledPGK += countPGK; pulledEsai += countEsai;
+                  }
+               }
+            }
+
+            // Acak urutan grup terpilih, lalu ratakan (flatten)
+            selectedGroups.sort(() => Math.random() - 0.5);
+            let finalQuestions = [];
+            selectedGroups.forEach(grp => { finalQuestions = finalQuestions.concat(grp); });
+
+            const orderIds = finalQuestions.map(q => q.id);
+            localStorage.setItem(`${storageKey}_order`, JSON.stringify(orderIds));
+            setQuestions(finalQuestions);
+          }
         }
-        
-        setQuestions(finalQuestions);
-      }
-    });
+      }, { onlyOnce: true });
+    }, { onlyOnce: true });
   }, [studentData, storageKey]);
 
   useEffect(() => {
@@ -153,34 +212,77 @@ export default function ExamRoom({ studentData, onFinish }) {
     else if ((timeLeft <= 0 || shouldForceSubmit) && questions.length > 0) submitExam();
   }, [timeLeft, isLocked, questions, isFullscreen, forceAllowFullscreen, shouldForceSubmit, storageKey]);
 
-  const handleSelect = (qId, opt) => {
-    const newAns = { ...answers, [qId]: opt }; 
-    setAnswers(newAns); localStorage.setItem(`${storageKey}_ans`, JSON.stringify(newAns));
+  // === V3: UNIFIED ANSWER HANDLER ===
+  const updateAnswer = (qId, value) => {
+    const newAns = { ...answers, [qId]: value }; 
+    setAnswers(newAns); 
+    localStorage.setItem(`${storageKey}_ans`, JSON.stringify(newAns));
     
     if (isOnline) {
       update(ref(db, `live_students/${sid}`), { progress: Math.round((Object.keys(newAns).length / questions.length) * 100) })
-        .catch(() => { /* Abaikan error jika terputus saat proses pengiriman */ });
+        .catch(() => { /* Abaikan error koneksi sementara */ });
     }
   };
+
+  const handleSelectPG = (qId, opt) => updateAnswer(qId, opt);
+
+  const handleSelectPGK = (qId, opt) => {
+    const currentAns = answers[qId] ? answers[qId].split(',') : [];
+    let newAnsArray;
+    if (currentAns.includes(opt)) newAnsArray = currentAns.filter(item => item !== opt);
+    else newAnsArray = [...currentAns, opt];
+    
+    updateAnswer(qId, newAnsArray.sort().join(','));
+  };
+
+  const handleEsaiChange = (qId, text) => updateAnswer(qId, text);
 
   const toggleRagu = (qId) => {
     const newRagu = { ...ragu, [qId]: !ragu[qId] };
     setRagu(newRagu); localStorage.setItem(`${storageKey}_ragu`, JSON.stringify(newRagu));
   };
 
+  // === V3: LOGIKA SKORING PARSIAL ===
   const submitExam = async () => {
     if (!isOnline) {
-      alert("🚨 KONEKSI TERPUTUS!\nSistem tidak dapat mengumpulkan jawaban karena Anda sedang offline. Mohon periksa kembali koneksi internet/WiFi Anda lalu coba lagi.\n\nJangan khawatir, semua jawaban Anda aman dan tidak akan hilang.");
+      alert("🚨 KONEKSI TERPUTUS!\nSistem tidak dapat mengumpulkan jawaban karena Anda sedang offline. Mohon periksa kembali koneksi internet/WiFi Anda.\n\nSemua jawaban Anda aman tersimpan di perangkat.");
       return;
     }
 
     const finalAnswers = answersRef.current;
-    let correct = 0; 
-    questions.forEach(q => { if (finalAnswers[q.id] === q.kunci) correct++; });
-    const score = Math.round((correct / questions.length) * 100);
+    let earnedPoints = 0;
+    let totalObjective = 0;
+
+    questions.forEach(q => {
+        const type = q.jenisSoal || 'PG';
+        if (type === 'ESAI') return; // Esai dinilai manual nanti
+
+        totalObjective++;
+        const studentAns = finalAnswers[q.id] || '';
+
+        if (type === 'PG') {
+            if (studentAns === q.kunci) earnedPoints++;
+        } else if (type === 'PGK') {
+            const keys = q.kunci ? q.kunci.split(',') : [];
+            const ans = studentAns ? studentAns.split(',') : [];
+            if (keys.length === 0) return;
+            
+            let correctCount = 0;
+            let wrongCount = 0;
+            ans.forEach(a => { if (keys.includes(a)) correctCount++; else wrongCount++; });
+            
+            // Skor Proporsional PGK (Min 0)
+            let point = (correctCount / keys.length) - (wrongCount / keys.length);
+            if (point < 0) point = 0;
+            earnedPoints += point;
+        }
+    });
+
+    const score = totalObjective > 0 ? Math.round((earnedPoints / totalObjective) * 100) : 0;
     
     try {
-      await push(ref(db, 'leaderboard'), { ...studentData, score, timestamp: Date.now() });
+      // WAJIB SIMPAN ANSWERS KE LEADERBOARD AGAR GURU BISA KOREKSI ESAI!
+      await push(ref(db, 'leaderboard'), { ...studentData, score, answers: finalAnswers, timestamp: Date.now() });
       await update(ref(db, `live_students/${sid}`), { status: 'Selesai' });
       
       localStorage.removeItem(`${storageKey}_ans`); 
@@ -226,11 +328,12 @@ export default function ExamRoom({ studentData, onFinish }) {
   if (questions.length === 0) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400 font-bold">
       <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-      Menyiapkan Naskah Soal...
+      Menyiapkan Naskah Soal & Mengacak...
     </div>
   );
 
   const q = questions[currentIndex];
+  const qType = q.jenisSoal || 'PG';
 
   return (
     <div 
@@ -239,6 +342,7 @@ export default function ExamRoom({ studentData, onFinish }) {
       onContextMenu={(e) => e.preventDefault()} 
       className="min-h-screen bg-[#f8fafc] font-sans pb-28 select-none relative overflow-x-hidden"
     >
+      {/* Watermark Identitas Siswa */}
       <div className="pointer-events-none fixed inset-0 z-0 flex flex-col items-center justify-center opacity-[0.03] rotate-[-30deg] text-black font-black text-3xl whitespace-nowrap overflow-hidden">
         {Array(10).fill(`${studentData?.name} - ${studentData?.class} `).map((text, i) => (
           <div key={i} className="mb-10">{text.repeat(5)}</div>
@@ -249,12 +353,10 @@ export default function ExamRoom({ studentData, onFinish }) {
         
         <header className="sticky top-0 z-40 bg-white w-full shadow-md border-b-4 border-emerald-500">
           <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
-            
             <div className="text-center sm:text-left flex-1">
               <h1 className="font-black text-[15px] sm:text-lg tracking-widest text-emerald-700 leading-tight">YASPENDIK PTP NUSANTARA IV</h1>
               <h2 className="font-bold text-[10px] sm:text-xs tracking-widest text-slate-500 mt-0.5">SMP/MTS DARMA PERTIWI BAH BUTONG</h2>
             </div>
-
             <div className="flex items-center justify-between w-full sm:w-auto gap-3 sm:gap-6 bg-slate-50 p-2 sm:p-3 rounded-2xl border border-slate-200">
               <div className="text-left">
                 <p className="font-black text-sm sm:text-base text-slate-800 leading-tight truncate max-w-[180px] sm:max-w-[250px]">{studentData?.name}</p>
@@ -262,7 +364,6 @@ export default function ExamRoom({ studentData, onFinish }) {
                   Kelas {studentData?.class}-{studentData?.subKelas} • {studentData?.mapel}
                 </p>
               </div>
-              
               <div className="flex flex-col items-end gap-1">
                 <div className="flex items-center gap-1 sm:gap-2 bg-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-emerald-600 font-mono font-black text-lg sm:text-xl border border-emerald-100 shadow-sm">
                   <Timer size={20} className="text-emerald-500 hidden sm:block" />
@@ -271,30 +372,42 @@ export default function ExamRoom({ studentData, onFinish }) {
                 {isOnline ? (
                    <span className="text-[9px] sm:text-[10px] font-bold text-emerald-600 flex items-center gap-1"><Wifi size={10} /> TERHUBUNG</span>
                 ) : (
-                   <span className="text-[9px] sm:text-[10px] font-bold text-red-500 flex items-center gap-1 animate-pulse"><WifiOff size={10} /> OFFLINE - LANJUTKAN UJIAN</span>
+                   <span className="text-[9px] sm:text-[10px] font-bold text-red-500 flex items-center gap-1 animate-pulse"><WifiOff size={10} /> OFFLINE</span>
                 )}
               </div>
             </div>
-
           </div>
         </header>
 
         {!isOnline && (
           <div className="bg-red-50 border-b border-red-200 p-2 text-center text-red-600 text-xs sm:text-sm font-bold shadow-inner">
-             ⚠️ KONEKSI TERPUTUS! Anda masih bisa menjawab soal. Jawaban aman tersimpan di perangkat Anda.
+             ⚠️ KONEKSI TERPUTUS! Anda masih bisa menjawab. Jawaban otomatis tersimpan di perangkat.
           </div>
         )}
 
         <main className="flex-1 max-w-4xl mx-auto w-full p-4 md:p-6 mt-2">
           
           <div className="bg-white p-6 md:p-10 rounded-3xl shadow-sm border border-slate-200 mb-6 relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-2 h-full bg-emerald-500"></div>
+            <div className={`absolute top-0 left-0 w-2 h-full ${qType === 'PG' ? 'bg-blue-500' : qType === 'PGK' ? 'bg-orange-500' : 'bg-purple-500'}`}></div>
             
-            <span className="inline-block text-xs font-black bg-emerald-100 text-emerald-800 px-4 py-2 rounded-xl border border-emerald-200 mb-6 uppercase tracking-widest">
-              Soal No. {currentIndex+1} / {questions.length}
-            </span>
+            <div className="flex flex-wrap justify-between items-center mb-6 gap-2 border-b border-slate-100 pb-4">
+               <span className="inline-block text-xs font-black bg-slate-100 text-slate-800 px-4 py-2 rounded-xl border border-slate-200 uppercase tracking-widest">
+                  Soal No. {currentIndex+1} / {questions.length}
+               </span>
+               
+               {/* V3: LABEL DINAMIS TIPE SOAL */}
+               {qType === 'PG' && <span className="text-xs font-black bg-blue-50 text-blue-800 px-4 py-2 rounded-xl border border-blue-200 uppercase tracking-widest">PILIHAN GANDA</span>}
+               {qType === 'PGK' && <span className="text-xs font-black bg-orange-50 text-orange-800 px-4 py-2 rounded-xl border border-orange-200 uppercase tracking-widest flex items-center gap-2"><Check size={14}/> PILIHAN GANDA KOMPLEKS</span>}
+               {qType === 'ESAI' && <span className="text-xs font-black bg-purple-50 text-purple-800 px-4 py-2 rounded-xl border border-purple-200 uppercase tracking-widest">SOAL ESAI (URAIAN)</span>}
+            </div>
+
+            {/* V3: BLOK WACANA BACAAN (JIKA ADA) */}
+            {q.teksWacana && (
+              <div className="mb-6 p-5 sm:p-6 bg-slate-50 border-l-4 border-slate-400 rounded-r-2xl text-sm sm:text-base font-medium text-slate-700 shadow-inner">
+                 <Latex>{String(q.teksWacana)}</Latex>
+              </div>
+            )}
             
-            {/* === V2: FITUR GAMBAR & PENGAMAN LATEX (DI LAYAR SISWA) === */}
             {q.gambar && (
               <div className="mb-6 flex justify-center">
                 <img src={q.gambar} alt="Gambar Soal Ujian" className="max-w-full max-h-80 rounded-2xl border border-slate-200 shadow-sm object-contain" />
@@ -305,15 +418,49 @@ export default function ExamRoom({ studentData, onFinish }) {
               <Latex>{String(q.pertanyaan || ' ')}</Latex>
             </div>
             
-            <div className="space-y-4">
-              {['A','B','C','D'].map(opt => (
-                <button key={opt} onClick={() => handleSelect(q.id, opt)} className={`w-full text-left p-5 rounded-2xl border-2 transition-all flex items-start gap-4 break-words ${answers[q.id]===opt ? 'bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-500/10 text-emerald-900 font-bold':'bg-white border-slate-200 hover:border-emerald-300 hover:bg-slate-50'}`}>
-                  <span className={`w-10 h-10 flex items-center justify-center rounded-xl font-black text-lg shrink-0 transition-colors ${answers[q.id]===opt?'bg-emerald-500 text-white shadow-inner':'bg-slate-100 text-slate-500 border border-slate-200'}`}>{opt}</span>
-                  {/* V2: Pengaman Latex di Opsi Jawaban */}
-                  <div className="flex-1 text-base md:text-lg pt-1.5"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
-                </button>
-              ))}
-            </div>
+            {/* V3: RENDER INPUT BERDASARKAN TIPE SOAL */}
+            {qType === 'PG' && (
+                <div className="space-y-4">
+                {['A','B','C','D'].map(opt => (
+                    <button key={opt} onClick={() => handleSelectPG(q.id, opt)} className={`w-full text-left p-5 rounded-2xl border-2 transition-all flex items-start gap-4 break-words ${answers[q.id]===opt ? 'bg-blue-50 border-blue-500 shadow-md shadow-blue-500/10 text-blue-900 font-bold':'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50'}`}>
+                    <span className={`w-10 h-10 flex items-center justify-center rounded-xl font-black text-lg shrink-0 transition-colors ${answers[q.id]===opt?'bg-blue-500 text-white shadow-inner':'bg-slate-100 text-slate-500 border border-slate-200'}`}>{opt}</span>
+                    <div className="flex-1 text-base md:text-lg pt-1.5"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
+                    </button>
+                ))}
+                </div>
+            )}
+
+            {qType === 'PGK' && (
+                <div className="space-y-4">
+                <p className="text-xs font-bold text-orange-600 mb-2">* Anda dapat mencentang lebih dari satu jawaban yang benar.</p>
+                {['A','B','C','D'].map(opt => {
+                    const isSelected = answers[q.id] && answers[q.id].split(',').includes(opt);
+                    return (
+                    <button key={opt} onClick={() => handleSelectPGK(q.id, opt)} className={`w-full text-left p-5 rounded-2xl border-2 transition-all flex items-start gap-4 break-words ${isSelected ? 'bg-orange-50 border-orange-500 shadow-md shadow-orange-500/10 text-orange-900 font-bold':'bg-white border-slate-200 hover:border-orange-300 hover:bg-slate-50'}`}>
+                    <div className={`w-8 h-8 flex flex-shrink-0 items-center justify-center rounded-xl border-2 mt-0.5 transition-colors ${isSelected ? 'bg-orange-500 border-orange-500 text-white' : 'bg-slate-100 border-slate-300'}`}>
+                        {isSelected && <Check size={20} strokeWidth={4} />}
+                    </div>
+                    <div className="flex-1 text-base md:text-lg pt-0.5">
+                        <span className="font-black mr-3 opacity-50">{opt}.</span>
+                        <Latex>{String(q[`opsi${opt}`] || ' ')}</Latex>
+                    </div>
+                    </button>
+                )})}
+                </div>
+            )}
+
+            {qType === 'ESAI' && (
+                <div className="space-y-2">
+                    <p className="text-xs font-bold text-purple-600 mb-2">* Ketik jawaban uraian Anda di dalam kotak di bawah ini.</p>
+                    <textarea 
+                        value={answers[q.id] || ''} 
+                        onChange={(e) => handleEsaiChange(q.id, e.target.value)}
+                        placeholder="Ketik jawaban Anda di sini..."
+                        className="w-full min-h-[200px] p-5 rounded-2xl border-2 border-slate-200 focus:border-purple-500 focus:ring-4 focus:ring-purple-500/20 outline-none text-base md:text-lg text-slate-800 transition-all bg-white"
+                    />
+                </div>
+            )}
+
           </div>
 
           <div className="flex flex-wrap gap-3 md:gap-4 mb-10">
@@ -327,18 +474,25 @@ export default function ExamRoom({ studentData, onFinish }) {
             <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-3 mb-10">
               {questions.map((quest, idx) => {
                 let btnClass = 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100';
-                if (ragu[quest.id]) btnClass = 'bg-amber-400 border-amber-500 text-white shadow-md shadow-amber-400/30';
-                else if (answers[quest.id]) btnClass = 'bg-emerald-500 border-emerald-600 text-white shadow-md shadow-emerald-500/30';
-                if (currentIndex === idx) btnClass += ' ring-4 ring-slate-800 ring-offset-2 scale-110 z-10';
+                
+                // V3: Logika warna tombol navigasi yang lebih clean (Biru tua untuk sudah dijawab)
+                if (ragu[quest.id]) {
+                    btnClass = 'bg-amber-400 border-amber-500 text-white shadow-md shadow-amber-400/30';
+                } else if (answers[quest.id] && answers[quest.id].trim() !== '') {
+                    btnClass = 'bg-slate-800 border-slate-900 text-white shadow-md shadow-slate-800/30';
+                }
+                
+                if (currentIndex === idx) btnClass += ' ring-4 ring-emerald-500/50 ring-offset-2 scale-110 z-10';
                 return (<button key={idx} onClick={() => setCurrentIndex(idx)} className={`h-12 md:h-14 rounded-xl flex items-center justify-center text-base font-black border transition-all ${btnClass}`}>{idx + 1}</button>);
               })}
             </div>
-            <button onClick={() => { if(window.confirm("Peringatan!\nAnda yakin ingin mengakhiri ujian dan mengumpulkan jawaban secara permanen?")) submitExam() }} className="w-full p-5 bg-slate-900 hover:bg-black text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl shadow-slate-900/20 active:scale-95 transition-all tracking-widest text-lg"><ShieldAlert size={24} className="text-emerald-400"/> KUMPULKAN UJIAN SEKARANG</button>
+            <button onClick={() => { if(window.confirm("Peringatan!\nAnda yakin ingin mengakhiri ujian dan mengumpulkan jawaban secara permanen?")) submitExam() }} className="w-full p-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl shadow-emerald-600/20 active:scale-95 transition-all tracking-widest text-lg"><ShieldAlert size={24}/> KUMPULKAN UJIAN SEKARANG</button>
           </div>
 
         </main>
       </div>
 
+      {/* POPUP PENGUMUMAN DARURAT */}
       {showBroadcast && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 transition-all">
           <div className="bg-white rounded-[2rem] p-6 md:p-8 max-w-md w-full shadow-2xl border-4 border-blue-500 transform transition-all animate-in zoom-in duration-300">
@@ -359,6 +513,7 @@ export default function ExamRoom({ studentData, onFinish }) {
         </div>
       )}
 
+      {/* OVERLAY SENSOR KECURANGAN (BLUR) */}
       {isBlurred && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md pointer-events-none transition-all">
           <div className="bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-4 animate-pulse border-4 border-red-500 text-center max-w-sm mx-4">
