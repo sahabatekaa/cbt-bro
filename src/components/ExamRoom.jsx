@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
-import { ref, onValue, update, push, get } from 'firebase/database';
+import { ref, onValue, update, push } from 'firebase/database';
 import { Timer, AlertTriangle, Book, ChevronLeft, ChevronRight, HelpCircle, Maximize, ShieldAlert, Landmark, Bell, Wifi, WifiOff, Check } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
@@ -45,11 +45,9 @@ export default function ExamRoom({ studentData, onFinish }) {
     };
   }, []);
 
-  // === V3 LOGIC: SMART GROUPING, ACAK KUOTA, DAN PROPAGASI WACANA ===
   useEffect(() => {
     if (!studentData?.token) return;
 
-    // 1. Tarik Info Sesi untuk Kuota
     onValue(ref(db, 'exam_sessions'), (sessionSnap) => {
       let sessionInfo = null;
       sessionSnap.forEach(s => { if (s.val().token === studentData.token) sessionInfo = s.val(); });
@@ -57,9 +55,8 @@ export default function ExamRoom({ studentData, onFinish }) {
       const kPG = sessionInfo?.kuotaPG || 0;
       const kPGK = sessionInfo?.kuotaPGK || 0;
       const kEsai = sessionInfo?.kuotaEsai || 0;
-      const hasQuota = kPG > 0 || kPGK > 0 || kEsai > 0; // Cek jika pakai sistem V3 atau V1 (Tarik Semua)
+      const hasQuota = kPG > 0 || kPGK > 0 || kEsai > 0; 
 
-      // 2. Tarik Bank Soal
       onValue(ref(db, 'bank_soal'), (snap) => {
         if (snap.val()) {
           const allQ = Object.keys(snap.val()).map(k => ({ id: k, ...snap.val()[k] }));
@@ -68,12 +65,10 @@ export default function ExamRoom({ studentData, onFinish }) {
           const savedOrder = localStorage.getItem(`${storageKey}_order`);
 
           if (savedOrder) {
-            // Siswa sudah punya susunan soal (Lanjut Ujian)
             const orderIds = JSON.parse(savedOrder);
             const finalQuestions = orderIds.map(id => filtered.find(q => q.id === id)).filter(Boolean);
             setQuestions(finalQuestions);
           } else {
-            // Siswa Baru Mulai: Algoritma Smart Grouping & Acak
             const groups = {};
             filtered.forEach(q => {
               const kw = q.kodeWacana || `single_${q.id}`;
@@ -81,7 +76,6 @@ export default function ExamRoom({ studentData, onFinish }) {
               groups[kw].push(q);
             });
 
-            // Propagasi teks wacana ke seluruh soal di grup yang sama (walau ditaruh di soal pertama saja oleh Guru)
             Object.keys(groups).forEach(kw => {
               if (kw.startsWith('single_')) return;
               let groupText = '';
@@ -89,15 +83,12 @@ export default function ExamRoom({ studentData, onFinish }) {
               if (groupText) { groups[kw].forEach(q => { q.teksWacana = groupText; }); }
             });
 
-            // Mulai Tarik Kuota & Acak
             const groupKeys = Object.keys(groups).sort(() => Math.random() - 0.5);
             let selectedGroups = [];
 
             if (!hasQuota) {
-               // V1 Backward Compatibility (Tarik Semua Jika Sesi Lama)
                selectedGroups = groupKeys.map(k => groups[k]);
             } else {
-               // V3 Kuota Logic
                let pulledPG = 0, pulledPGK = 0, pulledEsai = 0;
                for (let key of groupKeys) {
                   const grp = groups[key];
@@ -115,7 +106,6 @@ export default function ExamRoom({ studentData, onFinish }) {
                }
             }
 
-            // Acak urutan grup terpilih, lalu ratakan (flatten)
             selectedGroups.sort(() => Math.random() - 0.5);
             let finalQuestions = [];
             selectedGroups.forEach(grp => { finalQuestions = finalQuestions.concat(grp); });
@@ -152,26 +142,39 @@ export default function ExamRoom({ studentData, onFinish }) {
     return () => unsub();
   }, [sid, isLocked, storageKey, lastBroadcast]);
 
+  // === REVISI DARURAT SENSOR ANTI-CHEAT (V3.1) ===
+  const triggerWarning = (reason) => {
+    // PROTEKSI 1: Jangan hukum siswa jika mereka BELUM masuk ke soal.
+    if (!isFullscreen && !forceAllowFullscreen) return;
+
+    const newWarn = warnings + 1;
+    setWarnings(newWarn);
+    localStorage.setItem(`${storageKey}_warn`, newWarn);
+    update(ref(db, `live_students/${sid}`), { warnings: newWarn, status: reason }); 
+    if(newWarn >= 3) { setIsLocked(true); localStorage.setItem(`${storageKey}_lock`, 'true'); } 
+    alert(`PERINGATAN KECURANGAN ${newWarn}/3!\nPelanggaran: ${reason}`);
+  };
+
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
-    const handleVisibilityChange = () => { if(document.hidden && !isLocked) triggerWarning("Meninggalkan Halaman/Aplikasi"); };
-    const handleBlur = () => { if(!isLocked) setIsBlurred(true); };
+    
+    // PROTEKSI 2: Hanya hukum jika benar-benar minimize/keluar aplikasi sepenuhnya
+    const handleVisibilityChange = () => { 
+        if(document.hidden && !isLocked && (isFullscreen || forceAllowFullscreen)) {
+            triggerWarning("Meninggalkan Halaman/Aplikasi"); 
+        }
+    };
+    
+    // PROTEKSI 3: Blur tidak menambah hukuman, hanya efek visual saja (aman untuk Exambro)
+    const handleBlur = () => { if(!isLocked && !document.hidden) setIsBlurred(true); };
     const handleFocus = () => { setIsBlurred(false); };
 
-    let lastHeight = window.innerHeight;
-    const handleResize = () => {
-      if (Math.abs(window.innerHeight - lastHeight) > 150 && !isLocked) {
-        if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
-        triggerWarning("Layar Belah / Perubahan Jendela Terdeteksi");
-      }
-      lastHeight = window.innerHeight;
-    };
+    // SENSOR RESIZE DIHAPUS TOTAL AGAR KEYBOARD HP UNTUK ESAI TIDAK DIANGGAP CURANG!
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("blur", handleBlur);
     window.addEventListener("focus", handleFocus);
-    window.addEventListener("resize", handleResize);
 
     setIsFullscreen(!!document.fullscreenElement); 
 
@@ -180,18 +183,8 @@ export default function ExamRoom({ studentData, onFinish }) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("blur", handleBlur);
       window.removeEventListener("focus", handleFocus);
-      window.removeEventListener("resize", handleResize);
     };
-  }, [warnings, isLocked]);
-
-  const triggerWarning = (reason) => {
-    const newWarn = warnings + 1;
-    setWarnings(newWarn);
-    localStorage.setItem(`${storageKey}_warn`, newWarn);
-    update(ref(db, `live_students/${sid}`), { warnings: newWarn, status: reason }); 
-    if(newWarn >= 3) { setIsLocked(true); localStorage.setItem(`${storageKey}_lock`, 'true'); } 
-    alert(`PERINGATAN KECURANGAN ${newWarn}/3!\nPelanggaran: ${reason}`);
-  };
+  }, [warnings, isLocked, isFullscreen, forceAllowFullscreen]);
 
   const enterFullscreen = () => { 
     if (document.documentElement.requestFullscreen) {
@@ -212,7 +205,6 @@ export default function ExamRoom({ studentData, onFinish }) {
     else if ((timeLeft <= 0 || shouldForceSubmit) && questions.length > 0) submitExam();
   }, [timeLeft, isLocked, questions, isFullscreen, forceAllowFullscreen, shouldForceSubmit, storageKey]);
 
-  // === V3: UNIFIED ANSWER HANDLER ===
   const updateAnswer = (qId, value) => {
     const newAns = { ...answers, [qId]: value }; 
     setAnswers(newAns); 
@@ -242,7 +234,6 @@ export default function ExamRoom({ studentData, onFinish }) {
     setRagu(newRagu); localStorage.setItem(`${storageKey}_ragu`, JSON.stringify(newRagu));
   };
 
-  // === V3: LOGIKA SKORING PARSIAL ===
   const submitExam = async () => {
     if (!isOnline) {
       alert("🚨 KONEKSI TERPUTUS!\nSistem tidak dapat mengumpulkan jawaban karena Anda sedang offline. Mohon periksa kembali koneksi internet/WiFi Anda.\n\nSemua jawaban Anda aman tersimpan di perangkat.");
@@ -255,7 +246,7 @@ export default function ExamRoom({ studentData, onFinish }) {
 
     questions.forEach(q => {
         const type = q.jenisSoal || 'PG';
-        if (type === 'ESAI') return; // Esai dinilai manual nanti
+        if (type === 'ESAI') return; 
 
         totalObjective++;
         const studentAns = finalAnswers[q.id] || '';
@@ -271,7 +262,6 @@ export default function ExamRoom({ studentData, onFinish }) {
             let wrongCount = 0;
             ans.forEach(a => { if (keys.includes(a)) correctCount++; else wrongCount++; });
             
-            // Skor Proporsional PGK (Min 0)
             let point = (correctCount / keys.length) - (wrongCount / keys.length);
             if (point < 0) point = 0;
             earnedPoints += point;
@@ -281,7 +271,6 @@ export default function ExamRoom({ studentData, onFinish }) {
     const score = totalObjective > 0 ? Math.round((earnedPoints / totalObjective) * 100) : 0;
     
     try {
-      // WAJIB SIMPAN ANSWERS KE LEADERBOARD AGAR GURU BISA KOREKSI ESAI!
       await push(ref(db, 'leaderboard'), { ...studentData, score, answers: finalAnswers, timestamp: Date.now() });
       await update(ref(db, `live_students/${sid}`), { status: 'Selesai' });
       
@@ -305,7 +294,7 @@ export default function ExamRoom({ studentData, onFinish }) {
         <div className="absolute inset-0 bg-red-900/20 animate-pulse"></div>
         <ShieldAlert size={100} className="text-red-500 mb-6 animate-bounce relative z-10" />
         <h1 className="text-4xl font-black text-white tracking-widest relative z-10 mb-2">UJIAN DIBLOKIR!</h1>
-        <p className="mt-2 text-red-400 font-bold text-xl relative z-10 max-w-lg">Anda telah melanggar aturan keamanan (Keluar Aplikasi / Layar Belah) sebanyak 3 kali.</p>
+        <p className="mt-2 text-red-400 font-bold text-xl relative z-10 max-w-lg">Anda telah melanggar aturan keamanan (Keluar Aplikasi) sebanyak 3 kali.</p>
         <div className="mt-8 bg-white/10 p-6 rounded-2xl border border-white/20 backdrop-blur-sm relative z-10 max-w-md">
            <p className="text-white font-medium">Silakan membawa perangkat Anda dan menghadap ke Pengawas Ruangan untuk membuka kunci layar.</p>
         </div>
@@ -342,7 +331,6 @@ export default function ExamRoom({ studentData, onFinish }) {
       onContextMenu={(e) => e.preventDefault()} 
       className="min-h-screen bg-[#f8fafc] font-sans pb-28 select-none relative overflow-x-hidden"
     >
-      {/* Watermark Identitas Siswa */}
       <div className="pointer-events-none fixed inset-0 z-0 flex flex-col items-center justify-center opacity-[0.03] rotate-[-30deg] text-black font-black text-3xl whitespace-nowrap overflow-hidden">
         {Array(10).fill(`${studentData?.name} - ${studentData?.class} `).map((text, i) => (
           <div key={i} className="mb-10">{text.repeat(5)}</div>
@@ -395,13 +383,11 @@ export default function ExamRoom({ studentData, onFinish }) {
                   Soal No. {currentIndex+1} / {questions.length}
                </span>
                
-               {/* V3: LABEL DINAMIS TIPE SOAL */}
                {qType === 'PG' && <span className="text-xs font-black bg-blue-50 text-blue-800 px-4 py-2 rounded-xl border border-blue-200 uppercase tracking-widest">PILIHAN GANDA</span>}
                {qType === 'PGK' && <span className="text-xs font-black bg-orange-50 text-orange-800 px-4 py-2 rounded-xl border border-orange-200 uppercase tracking-widest flex items-center gap-2"><Check size={14}/> PILIHAN GANDA KOMPLEKS</span>}
                {qType === 'ESAI' && <span className="text-xs font-black bg-purple-50 text-purple-800 px-4 py-2 rounded-xl border border-purple-200 uppercase tracking-widest">SOAL ESAI (URAIAN)</span>}
             </div>
 
-            {/* V3: BLOK WACANA BACAAN (JIKA ADA) */}
             {q.teksWacana && (
               <div className="mb-6 p-5 sm:p-6 bg-slate-50 border-l-4 border-slate-400 rounded-r-2xl text-sm sm:text-base font-medium text-slate-700 shadow-inner">
                  <Latex>{String(q.teksWacana)}</Latex>
@@ -418,7 +404,6 @@ export default function ExamRoom({ studentData, onFinish }) {
               <Latex>{String(q.pertanyaan || ' ')}</Latex>
             </div>
             
-            {/* V3: RENDER INPUT BERDASARKAN TIPE SOAL */}
             {qType === 'PG' && (
                 <div className="space-y-4">
                 {['A','B','C','D'].map(opt => (
@@ -475,7 +460,6 @@ export default function ExamRoom({ studentData, onFinish }) {
               {questions.map((quest, idx) => {
                 let btnClass = 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100';
                 
-                // V3: Logika warna tombol navigasi yang lebih clean (Biru tua untuk sudah dijawab)
                 if (ragu[quest.id]) {
                     btnClass = 'bg-amber-400 border-amber-500 text-white shadow-md shadow-amber-400/30';
                 } else if (answers[quest.id] && answers[quest.id].trim() !== '') {
@@ -492,7 +476,6 @@ export default function ExamRoom({ studentData, onFinish }) {
         </main>
       </div>
 
-      {/* POPUP PENGUMUMAN DARURAT */}
       {showBroadcast && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 transition-all">
           <div className="bg-white rounded-[2rem] p-6 md:p-8 max-w-md w-full shadow-2xl border-4 border-blue-500 transform transition-all animate-in zoom-in duration-300">
@@ -513,7 +496,6 @@ export default function ExamRoom({ studentData, onFinish }) {
         </div>
       )}
 
-      {/* OVERLAY SENSOR KECURANGAN (BLUR) */}
       {isBlurred && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md pointer-events-none transition-all">
           <div className="bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-4 animate-pulse border-4 border-red-500 text-center max-w-sm mx-4">
