@@ -957,6 +957,16 @@ export default function TeacherDashboard({ onLogout }) {
           </div>
         </div>
       )}
+{/* WATERMARK DEVELOPER (FLOATING) */}
+<div className="fixed bottom-3 right-4 z-[999] pointer-events-none print:hidden">
+  <div className="flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-opacity duration-300">
+     <Zap size={10} className="text-amber-500" />
+     <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] drop-shadow-sm">
+        Developed by <span className="text-slate-700">IT Darma Pertiwi</span>
+     </p>
+  </div>
+</div>
+
     </div>
   );
 }
