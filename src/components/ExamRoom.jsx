@@ -388,8 +388,9 @@ export default function ExamRoom({ studentData, onFinish }) {
                {qType === 'ESAI' && <span className="text-xs font-black bg-purple-50 text-purple-800 px-4 py-2 rounded-xl border border-purple-200 uppercase tracking-widest">SOAL ESAI (URAIAN)</span>}
             </div>
 
+            {/* DITAMBAHKAN whitespace-pre-wrap DI SINI */}
             {q.teksWacana && (
-              <div className="mb-6 p-5 sm:p-6 bg-slate-50 border-l-4 border-slate-400 rounded-r-2xl text-sm sm:text-base font-medium text-slate-700 shadow-inner">
+              <div className="mb-6 p-5 sm:p-6 bg-slate-50 border-l-4 border-slate-400 rounded-r-2xl text-sm sm:text-base font-medium text-slate-700 shadow-inner whitespace-pre-wrap">
                  <Latex>{String(q.teksWacana)}</Latex>
               </div>
             )}
@@ -400,7 +401,8 @@ export default function ExamRoom({ studentData, onFinish }) {
               </div>
             )}
             
-            <div className="text-lg md:text-2xl font-semibold mb-8 text-slate-800 leading-relaxed break-words">
+            {/* DITAMBAHKAN whitespace-pre-wrap DI SINI */}
+            <div className="text-lg md:text-2xl font-semibold mb-8 text-slate-800 leading-relaxed break-words whitespace-pre-wrap">
               <Latex>{String(q.pertanyaan || ' ')}</Latex>
             </div>
             
@@ -409,7 +411,8 @@ export default function ExamRoom({ studentData, onFinish }) {
                 {['A','B','C','D'].map(opt => (
                     <button key={opt} onClick={() => handleSelectPG(q.id, opt)} className={`w-full text-left p-5 rounded-2xl border-2 transition-all flex items-start gap-4 break-words ${answers[q.id]===opt ? 'bg-blue-50 border-blue-500 shadow-md shadow-blue-500/10 text-blue-900 font-bold':'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50'}`}>
                     <span className={`w-10 h-10 flex items-center justify-center rounded-xl font-black text-lg shrink-0 transition-colors ${answers[q.id]===opt?'bg-blue-500 text-white shadow-inner':'bg-slate-100 text-slate-500 border border-slate-200'}`}>{opt}</span>
-                    <div className="flex-1 text-base md:text-lg pt-1.5"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
+                    {/* DITAMBAHKAN whitespace-pre-wrap DI SINI */}
+                    <div className="flex-1 text-base md:text-lg pt-1.5 whitespace-pre-wrap"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
                     </button>
                 ))}
                 </div>
@@ -425,7 +428,8 @@ export default function ExamRoom({ studentData, onFinish }) {
                     <div className={`w-8 h-8 flex flex-shrink-0 items-center justify-center rounded-xl border-2 mt-0.5 transition-colors ${isSelected ? 'bg-orange-500 border-orange-500 text-white' : 'bg-slate-100 border-slate-300'}`}>
                         {isSelected && <Check size={20} strokeWidth={4} />}
                     </div>
-                    <div className="flex-1 text-base md:text-lg pt-0.5">
+                    {/* DITAMBAHKAN whitespace-pre-wrap DI SINI */}
+                    <div className="flex-1 text-base md:text-lg pt-0.5 whitespace-pre-wrap">
                         <span className="font-black mr-3 opacity-50">{opt}.</span>
                         <Latex>{String(q[`opsi${opt}`] || ' ')}</Latex>
                     </div>
