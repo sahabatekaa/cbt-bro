@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from './firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { ref, set, push, onValue, get, update } from 'firebase/database';
-// TAMBAHAN IKON: RefreshCw untuk indikator sinkronisasi
-import { GraduationCap, Moon, Sun, User, Lock, Key, LayoutGrid, Users, CheckCircle, RefreshCw } from 'lucide-react';
+// TAMBAHAN IKON: RefreshCw untuk indikator sinkronisasi, ShieldCheck untuk Pengawas
+import { GraduationCap, Moon, Sun, User, Lock, Key, LayoutGrid, Users, CheckCircle, RefreshCw, ShieldCheck } from 'lucide-react';
 import ExamRoom from './components/ExamRoom';
 import ResultPage from './components/ResultPage';
 import TeacherDashboard from './components/TeacherDashboard';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
+import ProctorDashboard from './components/ProctorDashboard'; // <-- IMPORT HALAMAN PENGAWAS
 
 // ==========================================
 // KONFIGURASI VERSI APLIKASI (V2)
@@ -186,7 +187,7 @@ export default function App() {
         )}
 
         {currentView === 'login' && (
-          <div className="flex items-center justify-center min-h-screen p-4 md:p-6">
+          <div className="flex items-center justify-center min-h-screen p-4 md:p-6 relative">
             <div className="w-full max-w-md bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl shadow-xl border border-gray-100 dark:border-slate-700">
               <div className="flex flex-col items-center mb-8">
                 <div onClick={() => { setLogoClicks(c => c + 1); if (logoClicks + 1 >= 5) { setCurrentView('admin-login'); setLogoClicks(0); } }} className="bg-emerald-500 p-4 rounded-2xl text-white mb-4 cursor-pointer shadow-lg shadow-emerald-500/30"><GraduationCap size={40} /></div>
@@ -225,10 +226,40 @@ export default function App() {
                 <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-xl mt-4 active:scale-95 transition-transform shadow-lg shadow-emerald-500/30 tracking-widest text-lg">MULAI UJIAN</button>
               </form>
             </div>
+
+            {/* TOMBOL PINTU MASUK KE PENGAWAS (Pojok Kiri Bawah) */}
+            <button 
+              onClick={() => setCurrentView('proctor-login')}
+              className="fixed bottom-4 left-4 text-[10px] font-black text-slate-400 dark:text-slate-500 hover:text-blue-500 transition-colors uppercase tracking-widest z-50"
+            >
+              Akses Pengawas
+            </button>
           </div>
         )}
 
-        {/* ... (Sisanya tetap sama seperti kode asli Bos) ... */}
+        {/* HALAMAN AKSES PENGAWAS (PROCTOR LOGIN) */}
+        {currentView === 'proctor-login' && (
+          <div className="flex items-center justify-center min-h-screen p-4 bg-slate-100 dark:bg-slate-900">
+             <div className="w-full max-w-sm bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-xl text-center border border-slate-200 dark:border-slate-700">
+                <ShieldCheck size={48} className="mx-auto text-blue-500 mb-4" />
+                <h2 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6">Akses Pengawas Ruang</h2>
+                <form onSubmit={(e) => {
+                    e.preventDefault();
+                    // Password Rahasia Pengawas Ruangan: "pengawas123"
+                    if(e.target.pin.value === "pengawas123") {
+                        setCurrentView('proctor-dashboard');
+                    } else {
+                        alert("PIN Salah!");
+                    }
+                }}>
+                   <input name="pin" type="password" placeholder="Masukkan PIN Pengawas..." className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-center font-black tracking-widest outline-none focus:border-blue-500 mb-4 dark:text-white" required />
+                   <button type="submit" className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black shadow-lg shadow-blue-600/30 active:scale-95 transition-all">MASUK</button>
+                   <button type="button" onClick={() => setCurrentView('login')} className="w-full mt-4 text-sm font-bold text-slate-400 hover:text-slate-500 dark:hover:text-slate-300">Kembali ke Portal Siswa</button>
+                </form>
+             </div>
+          </div>
+        )}
+
         {currentView === 'admin-login' && (
           <div className="flex items-center justify-center min-h-screen p-4 md:p-6 bg-slate-950">
             <div className="w-full max-w-md bg-white p-6 md:p-8 rounded-3xl shadow-xl">
@@ -254,10 +285,14 @@ export default function App() {
           </div>
         )}
 
+        {/* RUTE RENDER KOMPONEN */}
         {currentView === 'exam' && <ExamRoom studentData={studentData} onFinish={(score) => { setExamScore(score); setCurrentView('result'); }} />}
         {currentView === 'result' && <ResultPage score={examScore} studentData={studentData} onLogout={logout} />}
         {currentView === 'teacher' && <TeacherDashboard onLogout={logout} />}
         {currentView === 'superadmin' && <SuperAdminDashboard onLogout={logout} />}
+        
+        {/* RUTE HALAMAN PENGAWAS */}
+        {currentView === 'proctor-dashboard' && <ProctorDashboard onLogout={() => setCurrentView('login')} />}
       </div>
     </div>
   );
