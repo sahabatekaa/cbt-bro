@@ -29,6 +29,27 @@ export default function App() {
   const getSafeData = () => { try { return JSON.parse(localStorage.getItem('studentData')) || null; } catch (e) { localStorage.removeItem('studentData'); return null; } };
   const [studentData, setStudentData] = useState(getSafeData());
 
+  // ==========================================
+  // BLOKIR TOMBOL BACK FISIK HP (ANTI KELUAR APK)
+  // ==========================================
+  useEffect(() => {
+    // Suntikkan history palsu ke dalam sistem
+    window.history.pushState(null, null, window.location.href);
+    
+    const handleBackButton = (event) => {
+      // Saat tombol back ditekan, suntikkan lagi history palsu 
+      // sehingga tidak pernah bisa kembali (keluar APK)
+      window.history.pushState(null, null, window.location.href);
+      
+      // Opsional: Jika bos mau ada alert saat tombol back dipencet saat ujian, uncomment baris bawah ini:
+      // if (currentView === 'exam') alert("Tindakan diblokir! Gunakan tombol navigasi di dalam layar.");
+    };
+
+    window.addEventListener('popstate', handleBackButton);
+    return () => window.removeEventListener('popstate', handleBackButton);
+  }, [currentView]);
+
+  // 1. MONITORING SINKRONISASI GLOBAL (ANTI-BLANK UPDATE)
   useEffect(() => {
     const versionRef = ref(db, 'settings/activeVersion');
     onValue(versionRef, (snapshot) => {
@@ -237,7 +258,6 @@ export default function App() {
                   <input name="password" type="password" placeholder="Password" required className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
                   <button type="submit" className="w-full bg-slate-900 hover:bg-black text-white py-4 rounded-xl font-bold mt-2 transition-all active:scale-95">LOGIN SISTEM</button>
                   
-                  {/* TOMBOL PENGAWAS SEKARANG PINDAH KESINI */}
                   <div className="pt-5 mt-5 border-t border-slate-100 space-y-3">
                     <button type="button" onClick={() => setCurrentView('proctor-login')} className="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2">
                       <ShieldCheck size={18}/> Masuk Sebagai Pengawas Ruang
@@ -286,8 +306,6 @@ export default function App() {
         {currentView === 'result' && <ResultPage score={examScore} studentData={studentData} onLogout={logout} />}
         {currentView === 'teacher' && <TeacherDashboard onLogout={logout} />}
         {currentView === 'superadmin' && <SuperAdminDashboard onLogout={logout} />}
-        
-        {/* RUTE HALAMAN PENGAWAS */}
         {currentView === 'proctor-dashboard' && <ProctorDashboard onLogout={() => setCurrentView('login')} />}
       </div>
     </div>
