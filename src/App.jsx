@@ -25,6 +25,7 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false); 
   
   const [scannedToken, setScannedToken] = useState('');
+  const [isStarting, setIsStarting] = useState(false); // <-- SENSOR ANTI KLIK DOBEL
   
   const getSafeData = () => { try { return JSON.parse(localStorage.getItem('studentData')) || null; } catch (e) { localStorage.removeItem('studentData'); return null; } };
   const [studentData, setStudentData] = useState(getSafeData());
@@ -40,9 +41,6 @@ export default function App() {
       // Saat tombol back ditekan, suntikkan lagi history palsu 
       // sehingga tidak pernah bisa kembali (keluar APK)
       window.history.pushState(null, null, window.location.href);
-      
-      // Opsional: Jika bos mau ada alert saat tombol back dipencet saat ujian, uncomment baris bawah ini:
-      // if (currentView === 'exam') alert("Tindakan diblokir! Gunakan tombol navigasi di dalam layar.");
     };
 
     window.addEventListener('popstate', handleBackButton);
@@ -93,13 +91,21 @@ export default function App() {
 
   const handleStudentStart = async (e) => {
     e.preventDefault();
+    
+    // 1. CEGAH KLIK BERKALI-KALI
+    if (isStarting) return; 
+    setIsStarting(true); 
+
     const name = e.target.studentName.value.trim();
     const sClass = e.target.studentClass.value;
     const sSubKelas = e.target.studentSubClass.value.toUpperCase().trim();
     const tokenInput = e.target.token.value.toUpperCase();
     
     const validSession = activeSessions.find(s => s.token === tokenInput && s.kelas === sClass);
-    if (!validSession) return alert("❌ AKSES DITOLAK: Token tidak ditemukan atau Kelas salah!");
+    if (!validSession) {
+       setIsStarting(false); // Buka kunci kalau gagal
+       return alert("❌ AKSES DITOLAK: Token tidak ditemukan atau Kelas salah!");
+    }
 
     try {
       let deviceId = localStorage.getItem('cbt_device_id');
@@ -118,9 +124,11 @@ export default function App() {
           const s = allStudents[key];
           if (s.token === tokenInput && s.name.toLowerCase() === name.toLowerCase()) {
             if (s.status === 'Selesai') {
+               setIsStarting(false);
                return alert("⚠️ Ujian untuk nama ini sudah diselesaikan dan dikumpulkan.");
             }
             if (s.deviceId && s.deviceId !== deviceId) {
+               setIsStarting(false);
                return alert("🚨 ANTI-JOKI AKTIF!\nNama ini sedang mengerjakan ujian di perangkat/HP lain.");
             }
             existingStudentId = key;
@@ -159,8 +167,11 @@ export default function App() {
       localStorage.setItem('studentData', JSON.stringify(finalData));
       setCurrentView('exam');
       if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+      
+      setIsStarting(false); // Buka kunci setelah sukses
     } catch (error) { 
       alert("Koneksi bermasalah: " + error.message); 
+      setIsStarting(false); // Buka kunci kalau error jaringan
     }
   };
 
@@ -240,7 +251,15 @@ export default function App() {
                     className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 font-mono uppercase tracking-widest font-black text-center" 
                   />
                 </div>
-                <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-xl mt-4 active:scale-95 transition-transform shadow-lg shadow-emerald-500/30 tracking-widest text-lg">MULAI UJIAN</button>
+                
+                {/* TOMBOL DENGAN SENSOR ANTI KLIK DOBEL */}
+                <button 
+                  type="submit" 
+                  disabled={isStarting}
+                  className={`w-full text-white font-black py-4 rounded-xl mt-4 transition-all tracking-widest text-lg ${isStarting ? 'bg-slate-400 cursor-not-allowed animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700 active:scale-95 shadow-lg shadow-emerald-500/30'}`}
+                >
+                  {isStarting ? 'MEMPROSES DATA...' : 'MULAI UJIAN'}
+                </button>
               </form>
             </div>
           </div>
