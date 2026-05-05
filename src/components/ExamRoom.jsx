@@ -474,7 +474,18 @@ export default function ExamRoom({ studentData, onFinish }) {
                 return (<button key={idx} onClick={() => setCurrentIndex(idx)} className={`h-12 md:h-14 rounded-xl flex items-center justify-center text-base font-black border transition-all ${btnClass}`}>{idx + 1}</button>);
               })}
             </div>
-            <button onClick={() => { if(window.confirm("Peringatan!\nAnda yakin ingin mengakhiri ujian dan mengumpulkan jawaban secara permanen?")) submitExam() }} className="w-full p-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl shadow-emerald-600/20 active:scale-95 transition-all tracking-widest text-lg"><ShieldAlert size={24}/> KUMPULKAN UJIAN SEKARANG</button>
+
+            {/* LOGIKA TOMBOL KUMPUL MUNCUL DI 10 MENIT TERAKHIR (600 DETIK) */}
+            {timeLeft <= 600 ? (
+              <button onClick={() => { if(window.confirm("Peringatan!\nAnda yakin ingin mengakhiri ujian dan mengumpulkan jawaban secara permanen?")) submitExam() }} className="w-full p-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl shadow-emerald-600/20 active:scale-95 transition-all tracking-widest text-lg animate-in fade-in zoom-in duration-500"><ShieldAlert size={24}/> KUMPULKAN UJIAN SEKARANG</button>
+            ) : (
+              <div className="w-full p-5 bg-slate-50 border-2 border-dashed border-slate-300 text-slate-400 rounded-2xl font-bold flex flex-col items-center justify-center gap-1 text-center select-none">
+                 <ShieldAlert size={24} className="mb-1 opacity-50" />
+                 <span className="text-sm tracking-wider uppercase">Tombol Kumpul Dikunci</span>
+                 <span className="text-xs font-medium text-slate-400">Tombol akan muncul otomatis pada 10 Menit Terakhir. Silakan periksa kembali jawaban Anda.</span>
+              </div>
+            )}
+            
           </div>
 
         </main>
