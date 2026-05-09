@@ -11,9 +11,9 @@ import SuperAdminDashboard from './components/SuperAdminDashboard';
 import ProctorDashboard from './components/ProctorDashboard';
 
 // ==========================================
-// KONFIGURASI VERSI APLIKASI (V2)
+// KONFIGURASI VERSI APLIKASI (V2.1)
 // ==========================================
-const APP_VERSION = "2.0.0"; 
+const APP_VERSION = "2.1.0"; 
 
 export default function App() {
   const [currentView, setCurrentView] = useState(localStorage.getItem('currentView') || 'login');
@@ -25,7 +25,7 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false); 
   
   const [scannedToken, setScannedToken] = useState('');
-  const [isStarting, setIsStarting] = useState(false); // <-- SENSOR ANTI KLIK DOBEL
+  const [isStarting, setIsStarting] = useState(false); // <-- SENSOR ANTI KLIK DOBEL KEMBALI AKTIF
   
   const getSafeData = () => { try { return JSON.parse(localStorage.getItem('studentData')) || null; } catch (e) { localStorage.removeItem('studentData'); return null; } };
   const [studentData, setStudentData] = useState(getSafeData());
@@ -34,34 +34,23 @@ export default function App() {
   // BLOKIR TOMBOL BACK FISIK HP (ANTI KELUAR APK)
   // ==========================================
   useEffect(() => {
-    // Suntikkan history palsu ke dalam sistem
     window.history.pushState(null, null, window.location.href);
-    
     const handleBackButton = (event) => {
-      // Saat tombol back ditekan, suntikkan lagi history palsu 
-      // sehingga tidak pernah bisa kembali (keluar APK)
       window.history.pushState(null, null, window.location.href);
     };
-
     window.addEventListener('popstate', handleBackButton);
     return () => window.removeEventListener('popstate', handleBackButton);
   }, [currentView]);
 
-  // 1. MONITORING SINKRONISASI GLOBAL (ANTI-BLANK UPDATE)
+  // MONITORING SINKRONISASI GLOBAL (ANTI-BLANK UPDATE)
   useEffect(() => {
     const versionRef = ref(db, 'settings/activeVersion');
     onValue(versionRef, (snapshot) => {
       const serverVersion = snapshot.val();
       if (serverVersion && serverVersion !== APP_VERSION) {
         setIsSyncing(true); 
-        
-        if (studentData) {
-          localStorage.setItem('sync_backup', JSON.stringify(studentData));
-        }
-
-        setTimeout(() => {
-          window.location.reload(true);
-        }, 3000);
+        if (studentData) { localStorage.setItem('sync_backup', JSON.stringify(studentData)); }
+        setTimeout(() => { window.location.reload(true); }, 3000);
       }
     });
   }, [studentData]);
@@ -91,7 +80,7 @@ export default function App() {
 
   const handleStudentStart = async (e) => {
     e.preventDefault();
-    
+
     // 1. CEGAH KLIK BERKALI-KALI
     if (isStarting) return; 
     setIsStarting(true); 
@@ -103,8 +92,24 @@ export default function App() {
     
     const validSession = activeSessions.find(s => s.token === tokenInput && s.kelas === sClass);
     if (!validSession) {
-       setIsStarting(false); // Buka kunci kalau gagal
+       setIsStarting(false);
        return alert("❌ AKSES DITOLAK: Token tidak ditemukan atau Kelas salah!");
+    }
+
+    // ==========================================
+    // LOGIKA CEK JENDELA WAKTU (V2.1)
+    // ==========================================
+    const now = new Date();
+    const timeNow = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+    if (validSession.jamMulai && timeNow < validSession.jamMulai) {
+       setIsStarting(false);
+       return alert(`🚫 BELUM MULAI!\nUjian baru akan dibuka pada jam ${validSession.jamMulai} WIB.`);
+    }
+
+    if (validSession.jamSelesai && timeNow >= validSession.jamSelesai) {
+       setIsStarting(false);
+       return alert(`🚫 WAKTU HABIS!\nSesi ujian ini sudah ditutup sejak jam ${validSession.jamSelesai} WIB.`);
     }
 
     try {
@@ -171,7 +176,7 @@ export default function App() {
       setIsStarting(false); // Buka kunci setelah sukses
     } catch (error) { 
       alert("Koneksi bermasalah: " + error.message); 
-      setIsStarting(false); // Buka kunci kalau error jaringan
+      setIsStarting(false); // Buka kunci kalau error
     }
   };
 
@@ -325,6 +330,8 @@ export default function App() {
         {currentView === 'result' && <ResultPage score={examScore} studentData={studentData} onLogout={logout} />}
         {currentView === 'teacher' && <TeacherDashboard onLogout={logout} />}
         {currentView === 'superadmin' && <SuperAdminDashboard onLogout={logout} />}
+        
+        {/* RUTE HALAMAN PENGAWAS */}
         {currentView === 'proctor-dashboard' && <ProctorDashboard onLogout={() => setCurrentView('login')} />}
       </div>
     </div>
