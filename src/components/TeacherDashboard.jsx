@@ -7,7 +7,7 @@ import Latex from 'react-latex-next';
 import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck, CheckSquare, Check, Percent, Clock } from 'lucide-react';
 
 export default function TeacherDashboard({ onLogout }) {
-  const APP_VERSION = "2.1.0";
+  const APP_VERSION = "2.0.0";
   const currentUserEmail = auth.currentUser?.email || 'guru@unknown.com';
   const isSuperAdmin = currentUserEmail === 'admin@sekolah.com';
 
