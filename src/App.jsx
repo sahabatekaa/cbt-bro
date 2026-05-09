@@ -13,7 +13,7 @@ import ProctorDashboard from './components/ProctorDashboard';
 // ==========================================
 // KONFIGURASI VERSI APLIKASI (V2.1)
 // ==========================================
-const APP_VERSION = "2.1.0"; 
+const APP_VERSION = "2.0.0"; 
 
 export default function App() {
   const [currentView, setCurrentView] = useState(localStorage.getItem('currentView') || 'login');
