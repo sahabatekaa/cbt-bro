@@ -11,9 +11,9 @@ import SuperAdminDashboard from './components/SuperAdminDashboard';
 import ProctorDashboard from './components/ProctorDashboard';
 
 // ==========================================
-// KONFIGURASI VERSI APLIKASI (V2)
+// KONFIGURASI VERSI APLIKASI (V2.1)
 // ==========================================
-const APP_VERSION = "2.0.0"; 
+const APP_VERSION = "2.1.0"; 
 
 export default function App() {
   const [currentView, setCurrentView] = useState(localStorage.getItem('currentView') || 'login');
@@ -25,24 +25,32 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false); 
   
   const [scannedToken, setScannedToken] = useState('');
+  const [isStarting, setIsStarting] = useState(false); // <-- SENSOR ANTI KLIK DOBEL KEMBALI AKTIF
   
   const getSafeData = () => { try { return JSON.parse(localStorage.getItem('studentData')) || null; } catch (e) { localStorage.removeItem('studentData'); return null; } };
   const [studentData, setStudentData] = useState(getSafeData());
 
+  // ==========================================
+  // BLOKIR TOMBOL BACK FISIK HP (ANTI KELUAR APK)
+  // ==========================================
+  useEffect(() => {
+    window.history.pushState(null, null, window.location.href);
+    const handleBackButton = (event) => {
+      window.history.pushState(null, null, window.location.href);
+    };
+    window.addEventListener('popstate', handleBackButton);
+    return () => window.removeEventListener('popstate', handleBackButton);
+  }, [currentView]);
+
+  // MONITORING SINKRONISASI GLOBAL (ANTI-BLANK UPDATE)
   useEffect(() => {
     const versionRef = ref(db, 'settings/activeVersion');
     onValue(versionRef, (snapshot) => {
       const serverVersion = snapshot.val();
       if (serverVersion && serverVersion !== APP_VERSION) {
         setIsSyncing(true); 
-        
-        if (studentData) {
-          localStorage.setItem('sync_backup', JSON.stringify(studentData));
-        }
-
-        setTimeout(() => {
-          window.location.reload(true);
-        }, 3000);
+        if (studentData) { localStorage.setItem('sync_backup', JSON.stringify(studentData)); }
+        setTimeout(() => { window.location.reload(true); }, 3000);
       }
     });
   }, [studentData]);
@@ -72,13 +80,37 @@ export default function App() {
 
   const handleStudentStart = async (e) => {
     e.preventDefault();
+
+    // 1. CEGAH KLIK BERKALI-KALI
+    if (isStarting) return; 
+    setIsStarting(true); 
+
     const name = e.target.studentName.value.trim();
     const sClass = e.target.studentClass.value;
     const sSubKelas = e.target.studentSubClass.value.toUpperCase().trim();
     const tokenInput = e.target.token.value.toUpperCase();
     
     const validSession = activeSessions.find(s => s.token === tokenInput && s.kelas === sClass);
-    if (!validSession) return alert("❌ AKSES DITOLAK: Token tidak ditemukan atau Kelas salah!");
+    if (!validSession) {
+       setIsStarting(false);
+       return alert("❌ AKSES DITOLAK: Token tidak ditemukan atau Kelas salah!");
+    }
+
+    // ==========================================
+    // LOGIKA CEK JENDELA WAKTU (V2.1)
+    // ==========================================
+    const now = new Date();
+    const timeNow = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+    if (validSession.jamMulai && timeNow < validSession.jamMulai) {
+       setIsStarting(false);
+       return alert(`🚫 BELUM MULAI!\nUjian baru akan dibuka pada jam ${validSession.jamMulai} WIB.`);
+    }
+
+    if (validSession.jamSelesai && timeNow >= validSession.jamSelesai) {
+       setIsStarting(false);
+       return alert(`🚫 WAKTU HABIS!\nSesi ujian ini sudah ditutup sejak jam ${validSession.jamSelesai} WIB.`);
+    }
 
     try {
       let deviceId = localStorage.getItem('cbt_device_id');
@@ -97,9 +129,11 @@ export default function App() {
           const s = allStudents[key];
           if (s.token === tokenInput && s.name.toLowerCase() === name.toLowerCase()) {
             if (s.status === 'Selesai') {
+               setIsStarting(false);
                return alert("⚠️ Ujian untuk nama ini sudah diselesaikan dan dikumpulkan.");
             }
             if (s.deviceId && s.deviceId !== deviceId) {
+               setIsStarting(false);
                return alert("🚨 ANTI-JOKI AKTIF!\nNama ini sedang mengerjakan ujian di perangkat/HP lain.");
             }
             existingStudentId = key;
@@ -138,8 +172,11 @@ export default function App() {
       localStorage.setItem('studentData', JSON.stringify(finalData));
       setCurrentView('exam');
       if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+      
+      setIsStarting(false); // Buka kunci setelah sukses
     } catch (error) { 
       alert("Koneksi bermasalah: " + error.message); 
+      setIsStarting(false); // Buka kunci kalau error
     }
   };
 
@@ -219,7 +256,15 @@ export default function App() {
                     className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 font-mono uppercase tracking-widest font-black text-center" 
                   />
                 </div>
-                <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-xl mt-4 active:scale-95 transition-transform shadow-lg shadow-emerald-500/30 tracking-widest text-lg">MULAI UJIAN</button>
+                
+                {/* TOMBOL DENGAN SENSOR ANTI KLIK DOBEL */}
+                <button 
+                  type="submit" 
+                  disabled={isStarting}
+                  className={`w-full text-white font-black py-4 rounded-xl mt-4 transition-all tracking-widest text-lg ${isStarting ? 'bg-slate-400 cursor-not-allowed animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700 active:scale-95 shadow-lg shadow-emerald-500/30'}`}
+                >
+                  {isStarting ? 'MEMPROSES DATA...' : 'MULAI UJIAN'}
+                </button>
               </form>
             </div>
           </div>
@@ -237,7 +282,6 @@ export default function App() {
                   <input name="password" type="password" placeholder="Password" required className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
                   <button type="submit" className="w-full bg-slate-900 hover:bg-black text-white py-4 rounded-xl font-bold mt-2 transition-all active:scale-95">LOGIN SISTEM</button>
                   
-                  {/* TOMBOL PENGAWAS SEKARANG PINDAH KESINI */}
                   <div className="pt-5 mt-5 border-t border-slate-100 space-y-3">
                     <button type="button" onClick={() => setCurrentView('proctor-login')} className="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2">
                       <ShieldCheck size={18}/> Masuk Sebagai Pengawas Ruang
