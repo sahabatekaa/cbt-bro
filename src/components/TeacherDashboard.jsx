@@ -4,10 +4,10 @@ import { ref as dbRef, onValue, push, remove, update, set } from 'firebase/datab
 import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
-import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck, CheckSquare, Check, Percent } from 'lucide-react';
+import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck, CheckSquare, Check, Percent, Clock } from 'lucide-react';
 
 export default function TeacherDashboard({ onLogout }) {
-  const APP_VERSION = "2.0.0";
+  const APP_VERSION = "2.1.0";
   const currentUserEmail = auth.currentUser?.email || 'guru@unknown.com';
   const isSuperAdmin = currentUserEmail === 'admin@sekolah.com';
 
@@ -33,13 +33,19 @@ export default function TeacherDashboard({ onLogout }) {
   
   const fileInputRef = useRef(null);
 
-  // === STATE SESI & BOBOT V3 ===
+  // === STATE SESI & BOBOT V3 & WAKTU ===
   const [selectedMapelSesi, setSelectedMapelSesi] = useState('');
   const [kuotaPG, setKuotaPG] = useState(0);
   const [kuotaPGK, setKuotaPGK] = useState(0);
   const [kuotaEsai, setKuotaEsai] = useState(0);
   const [bobotPG, setBobotPG] = useState(70);
   const [bobotEsai, setBobotEsai] = useState(30);
+  const [jamMulai, setJamMulai] = useState("07:30");
+  const [jamSelesai, setJamSelesai] = useState("09:00");
+
+  // === STATE MODAL EDIT SESI ===
+  const [showEditSesiModal, setShowEditSesiModal] = useState(false);
+  const [editSesiData, setEditSesiData] = useState({ id: '', bobotPG: 70, bobotEsai: 30, jamMulai: '07:30', jamSelesai: '09:00', mapel: '', token: '' });
 
   const [bankMapel, setBankMapel] = useState('');
   const [bankKelas, setBankKelas] = useState('');
@@ -293,13 +299,13 @@ export default function TeacherDashboard({ onLogout }) {
     push(dbRef(db, 'exam_sessions'), { 
       token: t, mapel: selectedMapelSesi, kelas: k, subKelas: sk, status: 'open', 
       kuotaPG: parseInt(kuotaPG) || 0, kuotaPGK: parseInt(kuotaPGK) || 0, kuotaEsai: parseInt(kuotaEsai) || 0,
-      bobotPG: bPG, bobotEsai: bEsai,
+      bobotPG: bPG, bobotEsai: bEsai, jamMulai: jamMulai, jamSelesai: jamSelesai,
       teacherEmail: currentUserEmail, timestamp: Date.now() 
     }); 
     
     document.getElementById('token_input').value = ''; 
     setKuotaPG(0); setKuotaPGK(0); setKuotaEsai(0);
-    setBobotPG(70); setBobotEsai(30);
+    setBobotPG(70); setBobotEsai(30); setJamMulai("07:30"); setJamSelesai("09:00");
     alert("Sesi Ujian Resmi Dibuka!"); 
   };
 
@@ -307,6 +313,34 @@ export default function TeacherDashboard({ onLogout }) {
   const delSession = (id) => { if(window.confirm("Hapus sesi ini?")) remove(dbRef(db, `exam_sessions/${id}`)); };
   const setMonitor = (t) => { setActiveMonitorToken(t); localStorage.setItem('activeMonitorToken', t); setActiveTab('proctor'); };
   const openQR = (token) => { setActiveQRToken(token); setShowQRModal(true); };
+
+  // === FUNGSI EDIT SESI ===
+  const openEditSesi = (s) => {
+    setEditSesiData({
+        id: s.id, token: s.token, mapel: s.mapel,
+        bobotPG: s.bobotPG !== undefined ? s.bobotPG : 70,
+        bobotEsai: s.bobotEsai !== undefined ? s.bobotEsai : 30,
+        jamMulai: s.jamMulai || "07:30",
+        jamSelesai: s.jamSelesai || "09:00"
+    });
+    setShowEditSesiModal(true);
+  };
+
+  const handleSaveEditSesi = async (e) => {
+    e.preventDefault();
+    const bPG = parseInt(editSesiData.bobotPG) || 0;
+    const bEsai = parseInt(editSesiData.bobotEsai) || 0;
+    if (bPG + bEsai !== 100) return alert("Peringatan: Total Bobot PG dan Esai harus tepat 100%!");
+
+    await update(dbRef(db, `exam_sessions/${editSesiData.id}`), {
+        bobotPG: bPG,
+        bobotEsai: bEsai,
+        jamMulai: editSesiData.jamMulai,
+        jamSelesai: editSesiData.jamSelesai
+    });
+    setShowEditSesiModal(false);
+    alert("Data Sesi Ujian Berhasil Diperbarui!");
+  };
 
   const NavItem = ({ tab, icon: Icon, label }) => (<button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-4 rounded-xl transition-all ${activeTab === tab ? 'bg-emerald-600 text-white font-black shadow-lg shadow-emerald-600/30' : 'text-slate-500 hover:bg-slate-100 font-bold'}`}><Icon size={20}/> <span>{label}</span></button>);
 
@@ -353,7 +387,7 @@ export default function TeacherDashboard({ onLogout }) {
         </nav>
         {isSuperAdmin && (
           <div className="px-4 mb-2">
-            <button onClick={triggerGlobalUpdate} className="w-full flex items-center justify-center gap-2 p-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-xs shadow-lg shadow-amber-500/30 transition-all active:scale-95 uppercase tracking-tighter"><Zap size={16}/> Rilis Update Global</button>
+            <button onClick={triggerGlobalUpdate} className="w-full flex items-center justify-center gap-2 p-3 bg-amber-50 hover:bg-amber-600 text-white rounded-xl font-black text-xs shadow-lg shadow-amber-500/30 transition-all active:scale-95 uppercase tracking-tighter"><Zap size={16}/> Rilis Update Global</button>
           </div>
         )}
         <div className="p-6 border-t border-slate-100"><button onClick={onLogout} className="w-full flex items-center justify-center gap-3 p-4 bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 rounded-xl font-bold transition-colors shadow-sm"><LogOut size={20}/> Keluar Akun</button></div>
@@ -363,7 +397,7 @@ export default function TeacherDashboard({ onLogout }) {
         <header className="bg-white border-b border-slate-200 p-4 lg:p-6 flex justify-between items-center z-10 print:hidden pr-16 md:pr-6">
           <div className="flex items-center gap-4">
             <button className="md:hidden p-2 bg-slate-100 rounded-lg text-emerald-600" onClick={() => setIsMobileMenuOpen(true)}><Menu size={24}/></button>
-            <h2 className="text-xl lg:text-2xl font-black text-slate-800 hidden sm:flex items-center gap-2 tracking-wide">Teacher Center <span className="bg-slate-100 text-slate-500 text-[10px] px-2 py-1 rounded-md uppercase font-black">V2 Staging</span></h2>
+            <h2 className="text-xl lg:text-2xl font-black text-slate-800 hidden sm:flex items-center gap-2 tracking-wide">Teacher Center <span className="bg-slate-100 text-slate-500 text-[10px] px-2 py-1 rounded-md uppercase font-black">V2.1 Stable</span></h2>
           </div>
           <div className="flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-full border border-emerald-100">
             <ShieldCheck size={16} className="text-emerald-500" /><span className="text-xs font-black text-emerald-700 uppercase tracking-widest">Sistem Stabil</span>
@@ -402,7 +436,7 @@ export default function TeacherDashboard({ onLogout }) {
                     </div>
                     
                     {/* INPUT BOBOT NILAI */}
-                    <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div className="grid grid-cols-2 gap-3 pt-1 border-b border-emerald-200/50 pb-3">
                         <div>
                             <label className="text-[10px] font-black text-emerald-700 mb-1 block flex items-center gap-1"><Percent size={12}/> Bobot PG/PGK</label>
                             <input type="number" min="0" max="100" value={bobotPG} onChange={e => setBobotPG(e.target.value)} className="w-full p-2 border border-emerald-300 rounded-xl text-center font-black text-emerald-800 bg-emerald-100/50 shadow-inner outline-none focus:border-emerald-500" />
@@ -410,6 +444,18 @@ export default function TeacherDashboard({ onLogout }) {
                         <div>
                             <label className="text-[10px] font-black text-emerald-700 mb-1 block flex items-center gap-1"><Percent size={12}/> Bobot Esai</label>
                             <input type="number" min="0" max="100" value={bobotEsai} onChange={e => setBobotEsai(e.target.value)} className="w-full p-2 border border-emerald-300 rounded-xl text-center font-black text-emerald-800 bg-emerald-100/50 shadow-inner outline-none focus:border-emerald-500" />
+                        </div>
+                    </div>
+
+                    {/* INPUT WAKTU UJIAN */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                        <div>
+                            <label className="text-[10px] font-black text-emerald-700 mb-1 block flex items-center gap-1"><Clock size={12}/> Jam Mulai</label>
+                            <input type="time" required value={jamMulai} onChange={e => setJamMulai(e.target.value)} className="w-full p-2 border border-emerald-300 rounded-xl text-center font-black text-emerald-800 bg-emerald-100/50 outline-none" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-emerald-700 mb-1 block flex items-center gap-1"><Clock size={12}/> Jam Selesai</label>
+                            <input type="time" required value={jamSelesai} onChange={e => setJamSelesai(e.target.value)} className="w-full p-2 border border-emerald-300 rounded-xl text-center font-black text-emerald-800 bg-emerald-100/50 outline-none" />
                         </div>
                     </div>
                   </div>
@@ -424,9 +470,9 @@ export default function TeacherDashboard({ onLogout }) {
                 {mySessions.length === 0 ? (
                   <div className="bg-white p-12 rounded-3xl text-center border border-dashed border-slate-300 text-slate-400 font-bold">Belum ada sesi yang dirilis.</div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {mySessions.map((s) => (
-                      <div key={s.id} className={`p-6 rounded-3xl border shadow-sm flex flex-col justify-between transition-colors ${s.status==='open'?'bg-white border-emerald-200':'bg-slate-50 border-slate-200 opacity-80'}`}>
+                      <div key={s.id} className={`p-5 lg:p-6 rounded-3xl border shadow-sm flex flex-col justify-between transition-colors ${s.status==='open'?'bg-white border-emerald-200':'bg-slate-50 border-slate-200 opacity-80'}`}>
                         <div>
                           <div className="flex justify-between items-start mb-4">
                             <h4 className="text-3xl font-black font-mono tracking-widest text-slate-800">{s.token}</h4>
@@ -443,17 +489,23 @@ export default function TeacherDashboard({ onLogout }) {
                              <div className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded-lg border border-emerald-200 flex justify-between">
                                 <span>BOBOT PG: {s.bobotPG || 70}%</span> <span>BOBOT ESAI: {s.bobotEsai || 30}%</span>
                              </div>
+                             {/* TAMBAHAN DISPLAY WAKTU */}
+                             <div className="text-[10px] font-black text-blue-700 bg-blue-50 px-2 py-1.5 rounded-lg border border-blue-200 flex justify-between">
+                                <span className="flex items-center gap-1"><Clock size={12}/> WAKTU: {s.jamMulai || '--:--'} s/d {s.jamSelesai || '--:--'}</span>
+                             </div>
                           </div>
                         </div>
-                        <div className="grid grid-cols-4 gap-2 border-t border-slate-100 pt-4">
-                          <button onClick={() => openQR(s.token)} className="col-span-2 bg-blue-50 text-blue-600 py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-2 border border-blue-100"><QrCode size={16}/> QR</button>
-                          <button onClick={() => setMonitor(s.token)} className="col-span-2 bg-slate-800 text-white py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-2"><Eye size={16}/> Monitor</button>
+                        {/* UPDATE GRID TOMBOL UNTUK MENGAKOMODASI TOMBOL EDIT */}
+                        <div className="grid grid-cols-6 gap-2 border-t border-slate-100 pt-4">
+                          <button onClick={() => openQR(s.token)} className="col-span-2 bg-blue-50 text-blue-600 py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-1 border border-blue-100"><QrCode size={14}/> QR</button>
+                          <button onClick={() => setMonitor(s.token)} className="col-span-2 bg-slate-800 text-white py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-1"><Eye size={14}/> Pantau</button>
+                          <button onClick={() => openEditSesi(s)} className="col-span-2 bg-amber-50 text-amber-600 py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-1 border border-amber-100"><Edit size={14}/> Edit</button>
                           
-                          <button onClick={() => toggleSession(s.id, s.status)} className="col-span-2 bg-slate-50 text-slate-700 py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-2 border border-slate-200">{s.status==='open'?<Lock size={16}/>:<Unlock size={16}/>} Kunci</button>
-                          <button onClick={() => delSession(s.id)} className="col-span-2 bg-red-50 text-red-600 py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-2 border border-red-100"><Trash2 size={16}/> Hapus</button>
+                          <button onClick={() => toggleSession(s.id, s.status)} className="col-span-3 bg-slate-50 text-slate-700 py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-2 border border-slate-200">{s.status==='open'?<Lock size={16}/>:<Unlock size={16}/>} Kunci Sesi</button>
+                          <button onClick={() => delSession(s.id)} className="col-span-3 bg-red-50 text-red-600 py-3 rounded-xl text-xs font-bold flex justify-center items-center gap-2 border border-red-100"><Trash2 size={16}/> Hapus</button>
 
                           {(s.status === 'closed' || s.kuotaEsai > 0) && (
-                            <button onClick={() => openKoreksiModal(s)} className="col-span-4 mt-2 bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 py-3 rounded-xl text-xs font-black flex justify-center items-center gap-2 transition-colors">
+                            <button onClick={() => openKoreksiModal(s)} className="col-span-6 mt-1 bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 py-3 rounded-xl text-xs font-black flex justify-center items-center gap-2 transition-colors">
                               <CheckSquare size={16}/> KOREKSI ESAI SERENTAK
                             </button>
                           )}
@@ -561,12 +613,12 @@ export default function TeacherDashboard({ onLogout }) {
                       
                       {q?.gambar && <img src={q.gambar} alt="Gambar" className="mb-4 max-w-sm rounded-2xl border border-slate-100" />}
                       {q?.teksWacana && (
-                         <div className="mb-4 p-4 bg-slate-50 border-l-4 border-slate-400 rounded-r-xl text-sm font-medium text-slate-600">
+                         <div className="mb-4 p-4 bg-slate-50 border-l-4 border-slate-400 rounded-r-xl text-sm font-medium text-slate-600 whitespace-pre-wrap">
                              <Latex>{String(q.teksWacana)}</Latex>
                          </div>
                       )}
 
-                      <div className="font-bold text-lg mb-6 text-slate-800 flex">
+                      <div className="font-bold text-lg mb-6 text-slate-800 flex whitespace-pre-wrap">
                         <span className="text-emerald-600 mr-2">{i+1}.</span>
                         <div className="flex-1"><Latex>{String(q?.pertanyaan || ' ')}</Latex></div>
                       </div>
@@ -581,7 +633,7 @@ export default function TeacherDashboard({ onLogout }) {
                               return (
                               <div key={opt} className={`p-4 rounded-2xl border flex break-words ${isKey ?'bg-emerald-50 border-emerald-300 font-bold text-emerald-900 shadow-sm':'bg-slate-50 border-slate-200'}`}>
                                  <span className="mr-2 font-black">{opt}.</span>
-                                 <div className="flex-1"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
+                                 <div className="flex-1 whitespace-pre-wrap"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
                               </div>
                             )})}
                           </div>
@@ -801,7 +853,7 @@ export default function TeacherDashboard({ onLogout }) {
                                              <p className="text-sm font-bold text-blue-500 mb-2 flex items-center gap-2"><MessageSquare size={16}/> Jawaban Siswa:</p>
                                              <div className="bg-blue-50 p-4 rounded-xl text-slate-700 font-medium min-h-[60px] border border-blue-100 whitespace-pre-wrap">
                                                 {siswa.answers && siswa.answers[q.id] ? siswa.answers[q.id] : <span className="text-slate-400 italic">Kosong (Tidak dijawab)</span>}
-                                              </div>
+                                             </div>
                                           </div>
                                           <div className="w-full md:w-48 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-center items-center shrink-0">
                                               <label className="text-[10px] font-black text-emerald-700 uppercase mb-2 text-center tracking-wider bg-emerald-100 px-2 py-1 rounded">Nilai (0-100)</label>
@@ -823,6 +875,51 @@ export default function TeacherDashboard({ onLogout }) {
                     </div>
                 )}
             </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT SESI AKTIF (BOBOT & JAM UJIAN) */}
+      {showEditSesiModal && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 z-[140] print:hidden">
+          <div className="bg-white p-6 md:p-8 rounded-[2.5rem] w-full max-w-lg shadow-2xl relative animate-in fade-in zoom-in duration-300">
+            <button onClick={() => setShowEditSesiModal(false)} className="absolute top-6 right-6 p-2 bg-slate-100 hover:bg-red-100 text-slate-500 hover:text-red-600 rounded-full transition-colors"><X size={24}/></button>
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2 mb-2"><Edit className="text-amber-500"/> Edit Sesi Ujian</h2>
+            <p className="text-sm font-bold text-slate-500 mb-6 pb-4 border-b border-slate-100">
+              Ubah Parameter untuk Token: <span className="font-mono text-emerald-600 font-black">{editSesiData.token}</span>
+            </p>
+
+            <form onSubmit={handleSaveEditSesi} className="space-y-6">
+              <div className="p-4 bg-amber-50/50 border border-amber-200 rounded-2xl space-y-4">
+                 <label className="text-sm font-black text-amber-800 uppercase flex items-center gap-2"><Percent size={18}/> Revisi Bobot Nilai Akhir</label>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-500 mb-1 block">Persentase PG/PGK</label>
+                        <input type="number" min="0" max="100" value={editSesiData.bobotPG} onChange={e => setEditSesiData({...editSesiData, bobotPG: e.target.value})} className="w-full p-3 border border-amber-300 rounded-xl text-center font-black text-amber-800 bg-amber-100/50 outline-none focus:border-amber-500" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-500 mb-1 block">Persentase Esai</label>
+                        <input type="number" min="0" max="100" value={editSesiData.bobotEsai} onChange={e => setEditSesiData({...editSesiData, bobotEsai: e.target.value})} className="w-full p-3 border border-amber-300 rounded-xl text-center font-black text-amber-800 bg-amber-100/50 outline-none focus:border-amber-500" />
+                    </div>
+                 </div>
+              </div>
+
+              <div className="p-4 bg-blue-50/50 border border-blue-200 rounded-2xl space-y-4">
+                 <label className="text-sm font-black text-blue-800 uppercase flex items-center gap-2"><Clock size={18}/> Revisi Jendela Waktu</label>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-500 mb-1 block">Pukul Berapa Dibuka?</label>
+                        <input type="time" required value={editSesiData.jamMulai} onChange={e => setEditSesiData({...editSesiData, jamMulai: e.target.value})} className="w-full p-3 border border-blue-300 rounded-xl text-center font-black text-blue-800 bg-blue-100/50 outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-500 mb-1 block">Pukul Berapa Ditutup?</label>
+                        <input type="time" required value={editSesiData.jamSelesai} onChange={e => setEditSesiData({...editSesiData, jamSelesai: e.target.value})} className="w-full p-3 border border-blue-300 rounded-xl text-center font-black text-blue-800 bg-blue-100/50 outline-none focus:border-blue-500" />
+                    </div>
+                 </div>
+              </div>
+
+              <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 mt-2 rounded-2xl font-black shadow-lg shadow-emerald-600/30 active:scale-95 transition-all tracking-widest flex justify-center items-center gap-2"><Check size={20}/> SIMPAN PERUBAHAN SESI</button>
+            </form>
+          </div>
         </div>
       )}
 
@@ -848,11 +945,11 @@ export default function TeacherDashboard({ onLogout }) {
                   </div>
                   {formData.gambar && <img src={formData.gambar} alt="Preview" className="mb-6 rounded-xl max-h-60 border border-slate-100" />}
                   {formData.teksWacana && (
-                      <div className="mb-4 p-4 bg-slate-50 border-l-4 border-slate-400 rounded-r-xl text-sm font-medium">
+                      <div className="mb-4 p-4 bg-slate-50 border-l-4 border-slate-400 rounded-r-xl text-sm font-medium whitespace-pre-wrap">
                          <Latex>{String(formData.teksWacana)}</Latex>
                       </div>
                   )}
-                  <div className="text-lg font-bold text-slate-800">
+                  <div className="text-lg font-bold text-slate-800 whitespace-pre-wrap">
                     <Latex>{String(formData.pertanyaan || 'Ketik pertanyaan...')}</Latex>
                   </div>
                 </div>
@@ -864,7 +961,7 @@ export default function TeacherDashboard({ onLogout }) {
                         return (
                         <div key={opt} className={`p-5 rounded-2xl border-2 bg-white flex ${isKey ? 'border-emerald-500 bg-emerald-50/30' : 'border-slate-100'}`}>
                         <span className={`font-black mr-3 ${isKey ? 'text-emerald-600' : 'text-slate-400'}`}>{opt}.</span>
-                        <div className="flex-1 font-medium text-slate-700"><Latex>{String(formData[`opsi${opt}`] || ' ')}</Latex></div>
+                        <div className="flex-1 font-medium text-slate-700 whitespace-pre-wrap"><Latex>{String(formData[`opsi${opt}`] || ' ')}</Latex></div>
                         </div>
                     )})}
                     </div>
@@ -957,16 +1054,6 @@ export default function TeacherDashboard({ onLogout }) {
           </div>
         </div>
       )}
-{/* WATERMARK DEVELOPER (FLOATING) */}
-<div className="fixed bottom-3 right-4 z-[999] pointer-events-none print:hidden">
-  <div className="flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-opacity duration-300">
-     <Zap size={10} className="text-amber-500" />
-     <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] drop-shadow-sm">
-        Developed by <span className="text-slate-700">IT Darma Pertiwi</span>
-     </p>
-  </div>
-</div>
-
     </div>
   );
 }
