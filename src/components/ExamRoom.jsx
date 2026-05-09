@@ -14,7 +14,9 @@ export default function ExamRoom({ studentData, onFinish }) {
   
   const [answers, setAnswers] = useState(() => JSON.parse(localStorage.getItem(`${storageKey}_ans`)) || {});
   const [ragu, setRagu] = useState(() => JSON.parse(localStorage.getItem(`${storageKey}_ragu`)) || {});
-  const [timeLeft, setTimeLeft] = useState(() => { const t = localStorage.getItem(`${storageKey}_time`); return t ? parseInt(t) : 3600; });
+  
+  // Waktu awal default 5400 (Akan ditimpa oleh data Jam Selesai Sesi nanti)
+  const [timeLeft, setTimeLeft] = useState(() => { const t = localStorage.getItem(`${storageKey}_time`); return t ? parseInt(t) : 5400; });
   const [warnings, setWarnings] = useState(() => parseInt(localStorage.getItem(`${storageKey}_warn`)) || 0);
   const [isLocked, setIsLocked] = useState(() => localStorage.getItem(`${storageKey}_lock`) === 'true');
   
@@ -52,6 +54,31 @@ export default function ExamRoom({ studentData, onFinish }) {
       let sessionInfo = null;
       sessionSnap.forEach(s => { if (s.val().token === studentData.token) sessionInfo = s.val(); });
       
+      // ==========================================
+      // LOGIKA SINKRONISASI JENDELA WAKTU (V2.1)
+      // ==========================================
+      if (sessionInfo && sessionInfo.jamSelesai) {
+        const calculateRemaining = () => {
+          const now = new Date();
+          const [h, m] = sessionInfo.jamSelesai.split(':');
+          const target = new Date();
+          target.setHours(parseInt(h, 10), parseInt(m, 10), 0);
+          
+          // Hitung selisih detik antara target Jam Selesai dengan Jam Sekarang
+          const diffSeconds = Math.floor((target.getTime() - now.getTime()) / 1000);
+          return diffSeconds > 0 ? diffSeconds : 0;
+        };
+
+        const remaining = calculateRemaining();
+        setTimeLeft(remaining);
+        
+        // Auto-Submit jika siswa telat dan waktu sudah habis
+        if (remaining <= 0) {
+           alert("Waktu ujian telah berakhir berdasarkan Jendela Waktu Sesi!");
+           submitExam();
+        }
+      }
+
       const kPG = sessionInfo?.kuotaPG || 0;
       const kPGK = sessionInfo?.kuotaPGK || 0;
       const kEsai = sessionInfo?.kuotaEsai || 0;
@@ -325,11 +352,13 @@ export default function ExamRoom({ studentData, onFinish }) {
   const qType = q.jenisSoal || 'PG';
 
   return (
+    // TAMBAHAN: translate="no" class="notranslate" UNTUK MEMBLOKIR GOOGLE TRANSLATE 
     <div 
+      translate="no"
       onCopy={(e) => { e.preventDefault(); alert("Tindakan disalin telah diblokir!"); }} 
       onPaste={(e) => e.preventDefault()} 
       onContextMenu={(e) => e.preventDefault()} 
-      className="min-h-screen bg-[#f8fafc] font-sans pb-28 select-none relative overflow-x-hidden"
+      className="notranslate min-h-screen bg-[#f8fafc] font-sans pb-28 select-none relative overflow-x-hidden"
     >
       <div className="pointer-events-none fixed inset-0 z-0 flex flex-col items-center justify-center opacity-[0.03] rotate-[-30deg] text-black font-black text-3xl whitespace-nowrap overflow-hidden">
         {Array(10).fill(`${studentData?.name} - ${studentData?.class} `).map((text, i) => (
@@ -388,7 +417,6 @@ export default function ExamRoom({ studentData, onFinish }) {
                {qType === 'ESAI' && <span className="text-xs font-black bg-purple-50 text-purple-800 px-4 py-2 rounded-xl border border-purple-200 uppercase tracking-widest">SOAL ESAI (URAIAN)</span>}
             </div>
 
-            {/* DITAMBAHKAN whitespace-pre-wrap DI SINI */}
             {q.teksWacana && (
               <div className="mb-6 p-5 sm:p-6 bg-slate-50 border-l-4 border-slate-400 rounded-r-2xl text-sm sm:text-base font-medium text-slate-700 shadow-inner whitespace-pre-wrap">
                  <Latex>{String(q.teksWacana)}</Latex>
@@ -401,7 +429,6 @@ export default function ExamRoom({ studentData, onFinish }) {
               </div>
             )}
             
-            {/* DITAMBAHKAN whitespace-pre-wrap DI SINI */}
             <div className="text-lg md:text-2xl font-semibold mb-8 text-slate-800 leading-relaxed break-words whitespace-pre-wrap">
               <Latex>{String(q.pertanyaan || ' ')}</Latex>
             </div>
@@ -411,7 +438,6 @@ export default function ExamRoom({ studentData, onFinish }) {
                 {['A','B','C','D'].map(opt => (
                     <button key={opt} onClick={() => handleSelectPG(q.id, opt)} className={`w-full text-left p-5 rounded-2xl border-2 transition-all flex items-start gap-4 break-words ${answers[q.id]===opt ? 'bg-blue-50 border-blue-500 shadow-md shadow-blue-500/10 text-blue-900 font-bold':'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50'}`}>
                     <span className={`w-10 h-10 flex items-center justify-center rounded-xl font-black text-lg shrink-0 transition-colors ${answers[q.id]===opt?'bg-blue-500 text-white shadow-inner':'bg-slate-100 text-slate-500 border border-slate-200'}`}>{opt}</span>
-                    {/* DITAMBAHKAN whitespace-pre-wrap DI SINI */}
                     <div className="flex-1 text-base md:text-lg pt-1.5 whitespace-pre-wrap"><Latex>{String(q[`opsi${opt}`] || ' ')}</Latex></div>
                     </button>
                 ))}
@@ -428,7 +454,6 @@ export default function ExamRoom({ studentData, onFinish }) {
                     <div className={`w-8 h-8 flex flex-shrink-0 items-center justify-center rounded-xl border-2 mt-0.5 transition-colors ${isSelected ? 'bg-orange-500 border-orange-500 text-white' : 'bg-slate-100 border-slate-300'}`}>
                         {isSelected && <Check size={20} strokeWidth={4} />}
                     </div>
-                    {/* DITAMBAHKAN whitespace-pre-wrap DI SINI */}
                     <div className="flex-1 text-base md:text-lg pt-0.5 whitespace-pre-wrap">
                         <span className="font-black mr-3 opacity-50">{opt}.</span>
                         <Latex>{String(q[`opsi${opt}`] || ' ')}</Latex>
@@ -474,7 +499,18 @@ export default function ExamRoom({ studentData, onFinish }) {
                 return (<button key={idx} onClick={() => setCurrentIndex(idx)} className={`h-12 md:h-14 rounded-xl flex items-center justify-center text-base font-black border transition-all ${btnClass}`}>{idx + 1}</button>);
               })}
             </div>
-            <button onClick={() => { if(window.confirm("Peringatan!\nAnda yakin ingin mengakhiri ujian dan mengumpulkan jawaban secara permanen?")) submitExam() }} className="w-full p-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl shadow-emerald-600/20 active:scale-95 transition-all tracking-widest text-lg"><ShieldAlert size={24}/> KUMPULKAN UJIAN SEKARANG</button>
+
+            {/* LOGIKA TOMBOL KUMPUL MUNCUL DI 10 MENIT TERAKHIR (600 DETIK) */}
+            {timeLeft <= 600 ? (
+              <button onClick={() => { if(window.confirm("Peringatan!\nAnda yakin ingin mengakhiri ujian dan mengumpulkan jawaban secara permanen?")) submitExam() }} className="w-full p-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl shadow-emerald-600/20 active:scale-95 transition-all tracking-widest text-lg animate-in fade-in zoom-in duration-500"><ShieldAlert size={24}/> KUMPULKAN UJIAN SEKARANG</button>
+            ) : (
+              <div className="w-full p-5 bg-slate-50 border-2 border-dashed border-slate-300 text-slate-400 rounded-2xl font-bold flex flex-col items-center justify-center gap-1 text-center select-none">
+                 <ShieldAlert size={24} className="mb-1 opacity-50" />
+                 <span className="text-sm tracking-wider uppercase">Tombol Kumpul Dikunci</span>
+                 <span className="text-xs font-medium text-slate-400">Tombol akan otomatis muncul pada 10 Menit Terakhir ujian.</span>
+              </div>
+            )}
+            
           </div>
 
         </main>
