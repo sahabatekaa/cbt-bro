@@ -7,7 +7,7 @@ import Latex from 'react-latex-next';
 import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck, CheckSquare, Check, Percent, Clock } from 'lucide-react';
 
 export default function TeacherDashboard({ onLogout }) {
-  const APP_VERSION = "2.0.0";
+  const APP_VERSION = "2.1.0";
   const currentUserEmail = auth.currentUser?.email || 'guru@unknown.com';
   const isSuperAdmin = currentUserEmail === 'admin@sekolah.com';
 
@@ -51,7 +51,8 @@ export default function TeacherDashboard({ onLogout }) {
   const [bankKelas, setBankKelas] = useState('');
   const [recapMapel, setRecapMapel] = useState('');
   const [recapKelas, setRecapKelas] = useState('');
-  const [recapSubKelas, setRecapSubKelas] = useState('');
+  // FITUR BARU: Filter Rekap Pakai Token (Bukan Sub Kelas lagi)
+  const [recapToken, setRecapToken] = useState(''); 
   
   const [broadcastText, setBroadcastText] = useState(''); 
   const [printMode, setPrintMode] = useState('rekap'); 
@@ -107,8 +108,11 @@ export default function TeacherDashboard({ onLogout }) {
 
   const availableRecapMapel = [...new Set(myLeaderboard.map(s => s?.mapel).filter(Boolean))];
   const availableRecapKelas = [...new Set(myLeaderboard.map(s => s?.class).filter(Boolean))];
-  const availableRecapSubKelas = [...new Set(myLeaderboard.map(s => s?.subKelas).filter(Boolean))];
-  const filteredLeaderboard = myLeaderboard.filter(s => (recapMapel === '' || s?.mapel === recapMapel) && (recapKelas === '' || s?.class === recapKelas) && (recapSubKelas === '' || s?.subKelas === recapSubKelas));
+  // Ambil Token Unik untuk Filter Rekap
+  const availableRecapTokens = [...new Set(myLeaderboard.map(s => s?.token).filter(Boolean))];
+  
+  // Filter Data berdasarkan Mapel, Kelas, dan TOKEN
+  const filteredLeaderboard = myLeaderboard.filter(s => (recapMapel === '' || s?.mapel === recapMapel) && (recapKelas === '' || s?.class === recapKelas) && (recapToken === '' || s?.token === recapToken));
 
   const triggerGlobalUpdate = () => {
     if(!isSuperAdmin) return;
@@ -354,15 +358,21 @@ export default function TeacherDashboard({ onLogout }) {
 
   return (
     <div className="flex h-screen bg-[#f8fafc] overflow-hidden font-sans">
+      {/* CSS KHUSUS PRINT - DIET FONT DAN REPEAT HEADER */}
       <style>{`
         @media print { 
-          @page { margin: 1cm; } body { background: white !important; -webkit-print-color-adjust: exact; } 
+          @page { margin: 1.5cm 1cm; size: portrait; } 
+          body { background: white !important; -webkit-print-color-adjust: exact; margin: 0; font-size: 12px; } 
           aside, header, button, select, input, .print\\:hidden { display: none !important; } 
-          main { padding: 0 !important; width: 100% !important; overflow: visible !important; } 
+          main { padding: 0 !important; width: 100% !important; overflow: visible !important; display: block !important; position: static !important; } 
           .print\\:block { display: block !important; } 
-          table { width: 100% !important; border-collapse: collapse; margin-top: 20px; border: 1px solid black; } 
-          th, td { border: 1px solid #000 !important; padding: 12px !important; color: black !important; font-size: 14px; } 
-          th { background-color: #f3f4f6 !important; font-weight: 900; } 
+          table { width: 100% !important; border-collapse: collapse; margin-top: 10px; border: 1.5px solid black !important; page-break-inside: auto; } 
+          thead { display: table-header-group; } 
+          tr { page-break-inside: avoid; page-break-after: auto; } 
+          th, td { border: 1px solid #000 !important; padding: 6px 8px !important; color: black !important; font-size: 11px !important; line-height: 1.2; } 
+          th { background-color: #f0f0f0 !important; font-weight: bold; text-transform: uppercase; } 
+          .flex.justify-end.mt-12, .flex.justify-between.mt-12 { page-break-inside: avoid; margin-top: 30px !important; }
+          .shadow-sm, .shadow-md, .shadow-xl { box-shadow: none !important; }
         }
       `}</style>
       
@@ -661,7 +671,7 @@ export default function TeacherDashboard({ onLogout }) {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <select value={recapMapel} onChange={e => setRecapMapel(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Mapel --</option>{availableRecapMapel.map(m => <option key={m}>{m}</option>)}</select>
                   <select value={recapKelas} onChange={e => setRecapKelas(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Tingkatan --</option>{availableRecapKelas.map(k => <option key={k}>{k}</option>)}</select>
-                  <select value={recapSubKelas} onChange={e => setRecapSubKelas(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Ruangan --</option>{availableRecapSubKelas.map(sk => <option key={sk}>{sk}</option>)}</select>
+                  <select value={recapToken} onChange={e => setRecapToken(e.target.value)} className="w-full p-4 border border-emerald-200 rounded-2xl bg-emerald-50 outline-none font-bold text-emerald-800 cursor-pointer focus:border-emerald-500"><option value="">-- Pilih Sesi (Token) --</option>{availableRecapTokens.map(t => <option key={t}>{t}</option>)}</select>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4 border-t border-slate-100">
@@ -674,7 +684,7 @@ export default function TeacherDashboard({ onLogout }) {
               <div className={`${printMode === 'rekap' ? 'hidden print:block' : 'hidden'}`}>
                 <OfficialHeader />
                 <h3 className="text-center font-black text-lg mb-6 underline">DAFTAR NILAI UJIAN SISWA</h3>
-                <p className="mb-4 text-sm font-bold">Mata Pelajaran: {recapMapel || 'Semua'} <br/> Kelas/Ruang: {recapKelas || 'Semua'}-{recapSubKelas || 'Semua'} <br/> Nama Guru: {teacherProfile?.name}</p>
+                <p className="mb-4 text-sm font-bold">Mata Pelajaran: {recapMapel || 'Semua'} <br/> Kelas: {recapKelas || 'Semua'} | Token Sesi: {recapToken || 'Semua'} <br/> Nama Guru: {teacherProfile?.name}</p>
                 <table className="w-full text-left text-sm">
                   <thead><tr><th className="py-2 px-3 w-12 text-center">No</th><th className="py-2 px-3">Nama Lengkap Siswa</th><th className="py-2 px-3">Mapel</th><th className="py-2 px-3 text-center">Kelas</th><th className="py-2 px-3 text-center">Skor Akhir</th></tr></thead>
                   <tbody>
@@ -696,7 +706,7 @@ export default function TeacherDashboard({ onLogout }) {
                   <table className="w-full my-4 border-none !border-0">
                     <tbody className="border-none">
                       <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Mata Pelajaran</td><td className="border-none !p-0">: {recapMapel || '_________________________'}</td></tr>
-                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Kelas / Ruang</td><td className="border-none !p-0">: {recapKelas || '____'} - {recapSubKelas || '____'}</td></tr>
+                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Kelas / Token</td><td className="border-none !p-0">: {recapKelas || '____'} / {recapToken || '____'}</td></tr>
                       <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Jumlah Peserta Terdaftar</td><td className="border-none !p-0">: {filteredLeaderboard.length} Orang</td></tr>
                       <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Hadir / Mengikuti Ujian</td><td className="border-none !p-0">: ______ Orang</td></tr>
                       <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Tidak Hadir (Absen)</td><td className="border-none !p-0">: ______ Orang</td></tr>
@@ -715,7 +725,7 @@ export default function TeacherDashboard({ onLogout }) {
               <div className={`${printMode === 'daftar_hadir' ? 'hidden print:block' : 'hidden'}`}>
                 <OfficialHeader />
                 <h3 className="text-center font-black text-lg mb-6 underline">DAFTAR HADIR PESERTA UJIAN</h3>
-                <p className="mb-4 text-sm font-bold">Mata Pelajaran: {recapMapel || '_________________'} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Kelas/Ruang: {recapKelas || '____'} - {recapSubKelas || '____'}</p>
+                <p className="mb-4 text-sm font-bold">Mata Pelajaran: {recapMapel || '_________________'} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Kelas: {recapKelas || '____'} | Token: {recapToken || '____'}</p>
                 <table className="w-full text-left text-sm">
                   <thead><tr><th className="py-3 px-3 w-12 text-center">No</th><th className="py-3 px-3">Nama Lengkap Siswa</th><th className="py-3 px-3 text-center w-24">Kelas</th><th className="py-3 px-3 w-48 text-center">Tanda Tangan</th></tr></thead>
                   <tbody>
