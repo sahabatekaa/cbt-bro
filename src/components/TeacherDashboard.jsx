@@ -145,10 +145,21 @@ export default function TeacherDashboard({ onLogout }) {
     }
   };
 
+  // SISTEM KEAMANAN GANDA UNTUK HAPUS SEMUA NILAI
   const handleDeleteMyRecap = async () => {
     if (myLeaderboard.length === 0) return alert("Belum ada data nilai.");
-    if(window.confirm("🚨 Hapus SEMUA rekap nilai siswa khusus untuk mapel Anda?")) {
-      try { await Promise.all(myLeaderboard.map(s => remove(dbRef(db, `leaderboard/${s.id}`)))); alert("Data dibersihkan."); } catch (error) { alert("Gagal: " + error.message); }
+    
+    const konfirmasi = window.prompt("🚨 PERINGATAN BAHAYA!\nTindakan ini akan MENGHAPUS PERMANEN SEMUA NILAI mapel Anda.\n\nKetik kata 'HAPUS' (huruf besar semua) di bawah ini untuk melanjutkan:");
+    
+    if (konfirmasi === "HAPUS") {
+      try { 
+        await Promise.all(myLeaderboard.map(s => remove(dbRef(db, `leaderboard/${s.id}`)))); 
+        alert("Data berhasil dibersihkan."); 
+      } catch (error) { 
+        alert("Gagal: " + error.message); 
+      }
+    } else if (konfirmasi !== null) {
+      alert("❌ Dibatalkan: Kata konfirmasi salah.");
     }
   };
 
@@ -358,20 +369,42 @@ export default function TeacherDashboard({ onLogout }) {
 
   return (
     <div className="flex h-screen bg-[#f8fafc] overflow-hidden font-sans">
-      {/* CSS KHUSUS PRINT - DIET FONT DAN REPEAT HEADER */}
+      {/* CSS KHUSUS PRINT - PECAH BATAS LAYAR & REPEAT HEADER */}
       <style>{`
         @media print { 
-          @page { margin: 1.5cm 1cm; size: portrait; } 
-          body { background: white !important; -webkit-print-color-adjust: exact; margin: 0; font-size: 12px; } 
+          @page { margin: 1cm; size: portrait; } 
+          
+          /* 1. RESET ROOT BODY */
+          html, body, #root { height: auto !important; overflow: visible !important; background: white !important; -webkit-print-color-adjust: exact; margin: 0; }
+          
+          /* 2. HANCURKAN PEMBATAS LAYAR (INI KUNCI AGAR BISA TURUN KE HALAMAN 2) */
+          .h-screen, .min-h-screen, .overflow-hidden, .overflow-y-auto, main, .flex-1 { 
+            height: auto !important; 
+            min-height: auto !important; 
+            overflow: visible !important; 
+            display: block !important; 
+            position: static !important; 
+          } 
+          
+          /* 3. SEMBUNYIKAN ELEMEN YANG GAK PERLU */
           aside, header, button, select, input, .print\\:hidden { display: none !important; } 
-          main { padding: 0 !important; width: 100% !important; overflow: visible !important; display: block !important; position: static !important; } 
           .print\\:block { display: block !important; } 
+          
+          /* 4. ATURAN TABEL & REPEAT HEADER */
           table { width: 100% !important; border-collapse: collapse; margin-top: 10px; border: 1.5px solid black !important; page-break-inside: auto; } 
           thead { display: table-header-group; } 
           tr { page-break-inside: avoid; page-break-after: auto; } 
-          th, td { border: 1px solid #000 !important; padding: 6px 8px !important; color: black !important; font-size: 11px !important; line-height: 1.2; } 
+          th, td { border: 1px solid #000 !important; padding: 6px 8px !important; color: black !important; font-size: 11px !important; line-height: 1.3; } 
           th { background-color: #f0f0f0 !important; font-weight: bold; text-transform: uppercase; } 
-          .flex.justify-end.mt-12, .flex.justify-between.mt-12 { page-break-inside: avoid; margin-top: 30px !important; }
+          
+          /* 5. TANDA TANGAN (AGAR TIDAK PATAH) */
+          .flex.justify-end.mt-12, .flex.justify-between.mt-12 { 
+             page-break-inside: avoid; 
+             margin-top: 30px !important; 
+             display: flex !important; 
+             justify-content: flex-end !important;
+          }
+          
           .shadow-sm, .shadow-md, .shadow-xl { box-shadow: none !important; }
         }
       `}</style>
