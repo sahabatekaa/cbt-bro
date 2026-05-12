@@ -3,7 +3,7 @@ import { db, auth } from '../firebase';
 import { ref, onValue, update, remove, set } from 'firebase/database';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import * as XLSX from 'xlsx'; 
-import { Activity, BookOpen, Users, LogOut, ShieldAlert, CheckCircle, XCircle, Trash2, Edit, AlertTriangle, Menu, X, ShieldCheck, Lock, UserCog, Plus, Crown, Download, Settings, KeyRound, Landmark, Zap, ImageIcon, Eye, FileText } from 'lucide-react';
+import { Activity, BookOpen, Users, LogOut, ShieldAlert, CheckCircle, XCircle, Trash2, Edit, AlertTriangle, Menu, X, ShieldCheck, Lock, Unlock, UserCog, Plus, Crown, Download, Settings, KeyRound, Landmark, Zap, ImageIcon, Eye, FileText } from 'lucide-react';
 import Latex from 'react-latex-next';
 import 'katex/dist/katex.min.css';
 
@@ -53,7 +53,9 @@ export default function SuperAdminDashboard({ onLogout }) {
   const pendingTeachers = data.users.filter(u => u?.status === 'pending' && u?.email !== 'admin@sekolah.com');
   const activeTeachers = data.users.filter(u => u?.status !== 'pending' && u?.email !== 'admin@sekolah.com');
   
-  const activeSessions = data.sessions.filter(s => s?.status === 'open');
+  // UPDATE: Ambil SEMUA sesi agar admin bisa melihat yang terkunci juga
+  const allAdminSessions = data.sessions.sort((a,b) => b.timestamp - a.timestamp);
+  
   const stats = {
     online: data.live.filter(s => s?.status !== 'Selesai').length,
     selesai: data.live.filter(s => s?.status === 'Selesai').length,
@@ -97,7 +99,15 @@ export default function SuperAdminDashboard({ onLogout }) {
     alert("Guru berhasil disuntikkan ke Database Pusat!"); setShowAddGuruModal(false); setGuruFormData({ name: '', email: '' });
   };
 
-  const forceCloseSession = (id) => { if(window.confirm("KUNCI PAKSA sesi ini?")) update(ref(db, `exam_sessions/${id}`), { status: 'closed' }); };
+  // UPDATE: Fungsi Toggle Buka/Kunci Sesi
+  const toggleSessionStatus = (id, currentStatus) => {
+    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+    const msg = newStatus === 'open' ? "BUKA KUNCI sesi ini agar siswa bisa masuk lagi?" : "KUNCI PAKSA sesi ini sekarang?";
+    if(window.confirm(msg)) {
+       update(ref(db, `exam_sessions/${id}`), { status: newStatus });
+    }
+  };
+  
   const deleteSoalGlobal = (id) => { if(window.confirm("Hapus soal ini dari PUSAT?")) remove(ref(db, `bank_soal/${id}`)); };
 
   // === V3: FUNGSI EDIT SOAL ADMIN ===
@@ -241,22 +251,24 @@ export default function SuperAdminDashboard({ onLogout }) {
               </div>
 
               <div className="mt-8 space-y-4">
-                <h4 className="font-bold text-white text-lg border-b border-slate-800 pb-3 flex items-center gap-2"><Lock size={18} className="text-amber-500"/> Sesi Berjalan Aktif ({activeSessions.length})</h4>
-                {activeSessions.length === 0 ? (
-                  <div className="bg-slate-900 p-10 rounded-3xl text-center text-slate-500 border border-dashed border-slate-700 font-medium">Tidak ada sesi ujian yang berjalan.</div>
+                <h4 className="font-bold text-white text-lg border-b border-slate-800 pb-3 flex items-center gap-2"><Lock size={18} className="text-amber-500"/> Semua Sesi Ujian ({allAdminSessions.length})</h4>
+                {allAdminSessions.length === 0 ? (
+                  <div className="bg-slate-900 p-10 rounded-3xl text-center text-slate-500 border border-dashed border-slate-700 font-medium">Tidak ada sesi ujian yang tercatat di database.</div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {activeSessions.map(s => (
-                      <div key={s.id} className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-lg flex flex-col justify-between gap-4 hover:border-amber-500/30 transition-colors">
+                    {allAdminSessions.map(s => (
+                      <div key={s.id} className={`p-5 rounded-3xl border shadow-lg flex flex-col justify-between gap-4 transition-colors ${s.status === 'open' ? 'bg-slate-900 border-slate-800 hover:border-amber-500/30' : 'bg-slate-950 border-red-900/30 opacity-80 hover:border-red-500/30'}`}>
                         <div className="flex justify-between items-start">
                           <div>
-                            <p className="font-black font-mono text-2xl text-amber-400 mb-1">{s?.token}</p>
+                            <p className={`font-black font-mono text-2xl mb-1 ${s.status === 'open' ? 'text-amber-400' : 'text-red-500'}`}>{s?.token}</p>
                             <p className="font-bold text-slate-400 text-sm">{s?.teacherEmail}</p>
                           </div>
-                          <button onClick={() => forceCloseSession(s.id)} className="bg-red-950/50 text-red-500 hover:bg-red-600 hover:text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-red-900/50 shadow-md transition-all active:scale-95"><Lock size={14}/> Kunci Paksa</button>
+                          <button onClick={() => toggleSessionStatus(s.id, s.status)} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border shadow-md transition-all active:scale-95 ${s.status === 'open' ? 'bg-red-950/50 text-red-500 hover:bg-red-600 hover:text-white border-red-900/50' : 'bg-emerald-950/50 text-emerald-500 hover:bg-emerald-600 hover:text-white border-emerald-900/50'}`}>
+                            {s.status === 'open' ? <><Lock size={14}/> Kunci Paksa</> : <><Unlock size={14}/> Buka Kunci</>}
+                          </button>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                            <span className="text-xs font-black text-slate-900 bg-amber-500 px-3 py-1.5 rounded-md">{s?.mapel}</span>
+                            <span className={`text-xs font-black px-3 py-1.5 rounded-md ${s.status === 'open' ? 'text-slate-900 bg-amber-500' : 'text-slate-300 bg-slate-800'}`}>{s?.mapel}</span>
                             <span className="text-xs font-bold text-slate-300 bg-slate-800 px-3 py-1.5 rounded-md border border-slate-700">Tk. {s?.kelas}-{s?.subKelas}</span>
                         </div>
                         {/* V3: Tampilkan Info Kuota di Radar Admin */}
