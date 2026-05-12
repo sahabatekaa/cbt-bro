@@ -329,7 +329,7 @@ export default function TeacherDashboard({ onLogout }) {
   const setMonitor = (t) => { setActiveMonitorToken(t); localStorage.setItem('activeMonitorToken', t); setActiveTab('proctor'); };
   const openQR = (token) => { setActiveQRToken(token); setShowQRModal(true); };
 
-  // === FUNGSI EDIT SESI ===
+  // === FUNGSI EDIT SESI & AUTO-RECALCULATE NILAI ===
   const openEditSesi = (s) => {
     setEditSesiData({
         id: s.id, token: s.token, mapel: s.mapel,
@@ -347,14 +347,46 @@ export default function TeacherDashboard({ onLogout }) {
     const bEsai = parseInt(editSesiData.bobotEsai) || 0;
     if (bPG + bEsai !== 100) return alert("Peringatan: Total Bobot PG dan Esai harus tepat 100%!");
 
-    await update(dbRef(db, `exam_sessions/${editSesiData.id}`), {
-        bobotPG: bPG,
-        bobotEsai: bEsai,
-        jamMulai: editSesiData.jamMulai,
-        jamSelesai: editSesiData.jamSelesai
-    });
-    setShowEditSesiModal(false);
-    alert("Data Sesi Ujian Berhasil Diperbarui!");
+    try {
+        // 1. Simpan pengaturan sesi & jam ke Database
+        await update(dbRef(db, `exam_sessions/${editSesiData.id}`), {
+            bobotPG: bPG,
+            bobotEsai: bEsai,
+            jamMulai: editSesiData.jamMulai,
+            jamSelesai: editSesiData.jamSelesai
+        });
+
+        // 2. MESIN PINTAR: AUTO-HITUNG ULANG NILAI SISWA
+        const studentsInSession = myLeaderboard.filter(s => s.token === editSesiData.token);
+        
+        if (studentsInSession.length > 0) {
+            const eQs = myQuestions.filter(q => q.mapel === editSesiData.mapel && q.jenisSoal === 'ESAI');
+            
+            const promises = studentsInSession.map(student => {
+                let totalEssayScore = 0;
+                eQs.forEach(q => {
+                    const s = student.essayScores ? (parseFloat(student.essayScores[`${student.id}_${q.id}`]) || 0) : 0;
+                    totalEssayScore += s;
+                });
+                
+                const avgEssayScore = eQs.length > 0 ? (totalEssayScore / eQs.length) : 0;
+                const objectiveScore = student.objectiveScore !== undefined ? student.objectiveScore : student.score;
+                const finalScore = Math.round((objectiveScore * bPG / 100) + (avgEssayScore * bEsai / 100));
+
+                return update(dbRef(db, `leaderboard/${student.id}`), {
+                    score: finalScore,
+                    objectiveScore: objectiveScore
+                });
+            });
+            
+            await Promise.all(promises);
+        }
+
+        setShowEditSesiModal(false);
+        alert("✅ Ajaib! Sesi Diperbarui & Semua Nilai Siswa Otomatis Dihitung Ulang!");
+    } catch (err) {
+        alert("Gagal menyimpan: " + err.message);
+    }
   };
 
   const NavItem = ({ tab, icon: Icon, label }) => (<button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-4 rounded-xl transition-all ${activeTab === tab ? 'bg-emerald-600 text-white font-black shadow-lg shadow-emerald-600/30' : 'text-slate-500 hover:bg-slate-100 font-bold'}`}><Icon size={20}/> <span>{label}</span></button>);
