@@ -46,10 +46,9 @@ export default function SuperAdminDashboard({ onLogout }) {
   const [editGuruId, setEditGuruId] = useState(null);
   const [guruFormData, setGuruFormData] = useState({ name: '', email: '' });
 
-useEffect(() => {
+  useEffect(() => {
     const fetchData = (path, key) => onValue(ref(db, path), snap => {
       const val = snap.val();
-      // PERBAIKAN: Posisi "id: k" dipindah ke belakang agar kunci Firebase tidak tertimpa ID Siswa!
       if (val && typeof val === 'object') setData(prev => ({ ...prev, [key]: Object.keys(val).map(k => ({ ...val[k], id: k })) }));
       else setData(prev => ({ ...prev, [key]: [] }));
     });
@@ -59,7 +58,7 @@ useEffect(() => {
     fetchData('exam_sessions', 'sessions');
     fetchData('leaderboard', 'lead'); 
   }, []);
-  
+
   const pendingTeachers = data.users.filter(u => u?.status === 'pending' && u?.email !== 'admin@sekolah.com');
   const activeTeachers = data.users.filter(u => u?.status !== 'pending' && u?.email !== 'admin@sekolah.com');
   const allAdminSessions = data.sessions.sort((a,b) => b.timestamp - a.timestamp);
@@ -75,7 +74,7 @@ useEffect(() => {
   const filteredSoal = data.bank.filter(q => (filterGuru === '' || q?.teacherEmail === filterGuru) && (filterMapel === '' || q?.mapel === filterMapel));
 
   // ==================================================
-  // FILTER LOGIC UNTUK REKAP ADMIN PUSAT (DIPERKETAT)
+  // FILTER LOGIC UNTUK REKAP ADMIN PUSAT
   // ==================================================
   const availableRecapGurus = [...new Set(data.lead.map(s => s?.teacherEmail).filter(Boolean))];
   
@@ -248,7 +247,6 @@ useEffect(() => {
 
   return (
     <div className="flex h-screen bg-slate-950 overflow-hidden font-sans text-slate-200">
-      {/* CSS KHUSUS PRINT - PECAH BATAS LAYAR & REPEAT HEADER */}
       <style>{`
         @media print { 
           @page { margin: 1cm; size: portrait; } 
@@ -270,7 +268,6 @@ useEffect(() => {
 
       {isMobileMenuOpen && <div className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />}
       
-      {/* UKURAN SIDEBAR DIKECILKAN (w-72 -> w-64) */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-black border-r border-slate-800 flex flex-col transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 shadow-2xl`}>
         <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h1 className="text-xl font-black text-white flex gap-2 items-center tracking-widest"><Crown className="text-amber-500" size={24}/> PUSAT</h1><button className="md:hidden text-slate-500" onClick={() => setIsMobileMenuOpen(false)}><X size={20}/></button></div>
         <div className="p-4 border-b border-slate-800 bg-gradient-to-r from-slate-900 to-black">
@@ -295,7 +292,6 @@ useEffect(() => {
       </aside>
       
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-[#0a0f1c]">
-        {/* PADDING HEADER DIKECILKAN */}
         <header className="bg-slate-900 border-b border-slate-800 p-3 lg:p-4 flex justify-between items-center shadow-lg z-10 print:hidden">
           <div className="flex items-center gap-3">
             <button className="md:hidden p-1.5 bg-slate-800 rounded-lg text-amber-500" onClick={() => setIsMobileMenuOpen(true)}><Menu size={20}/></button>
@@ -318,7 +314,6 @@ useEffect(() => {
           </div>
         </header>
         
-        {/* LEBAR KONTEN DIMAKSIMALKAN (max-w-7xl) AGAR TIDAK SESAK */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
           
           {/* TAB RADAR */}
@@ -326,7 +321,6 @@ useEffect(() => {
             <div className="space-y-4 max-w-7xl mx-auto animate-in fade-in duration-300">
               <h3 className="text-xl font-black text-white mb-4 flex items-center gap-2"><Activity className="text-amber-500" size={20}/> Radar Aktivitas Global</h3>
               
-              {/* KARTU RADAR DIKECILKAN */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 border-b-4 border-b-amber-500 shadow-lg relative overflow-hidden">
                   <div className="absolute -right-2 -bottom-2 opacity-5"><Users size={60}/></div>
@@ -410,8 +404,6 @@ useEffect(() => {
                       <div className="flex flex-wrap gap-2 mb-3 border-b border-slate-800 pb-3">
                         <span className="text-[10px] font-black bg-amber-500 text-black px-2.5 py-1 rounded">{q?.teacherEmail}</span>
                         <span className="text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 px-2.5 py-1 rounded">{q?.mapel} (Tk. {q?.kelas})</span>
-                        
-                        {/* V3: Label Tipe Soal di Admin */}
                         <span className={`text-[10px] font-black px-2.5 py-1 rounded border ${(!q.jenisSoal || q.jenisSoal === 'PG') ? 'bg-blue-900/40 text-blue-400 border-blue-800/50' : q.jenisSoal === 'PGK' ? 'bg-orange-900/40 text-orange-400 border-orange-800/50' : 'bg-purple-900/40 text-purple-400 border-purple-800/50'}`}>
                            Tipe: {q.jenisSoal || 'PG'}
                         </span>
@@ -424,7 +416,6 @@ useEffect(() => {
                         </div>
                       )}
 
-                      {/* V3: Tampilkan Teks Wacana di Admin */}
                       {q?.teksWacana && (
                          <div className="mb-3 p-3 bg-slate-950 border-l-2 border-slate-600 rounded-r-lg text-xs font-medium text-slate-400">
                              <Latex>{String(q.teksWacana)}</Latex>
@@ -436,7 +427,6 @@ useEffect(() => {
                          <div className="flex-1"><Latex>{String(q?.pertanyaan || ' ')}</Latex></div>
                       </div>
                       
-                      {/* V3: Jangan Render Opsi Jika Esai */}
                       {(!q.jenisSoal || q.jenisSoal !== 'ESAI') && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-400 font-medium">
                             {['A','B','C','D'].map(opt => {
@@ -461,7 +451,7 @@ useEffect(() => {
             </div>
           )}
 
-          {/* TAB MANAJEMEN GURU */}
+          {/* TAB MANAJEMEN GURU (UBAH JADI TABEL) */}
           {activeTab === 'guru' && (
             <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -491,32 +481,47 @@ useEffect(() => {
                 {activeTeachers.length === 0 ? (
                   <div className="text-center p-8 bg-slate-900 rounded-2xl border border-dashed border-slate-700 text-slate-500 text-sm font-medium">Buku Induk Guru Kosong.</div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {activeTeachers.map(t => (
-                      <div key={t.id} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-sm flex flex-col justify-between hover:border-amber-500/30 transition-colors">
-                        <div className="flex items-center gap-3 mb-4 border-b border-slate-800/50 pb-3">
-                          <div className="w-10 h-10 shrink-0 bg-slate-800 text-amber-500 rounded-full flex items-center justify-center font-black text-lg uppercase border border-slate-700">
-                            {t?.name ? t.name.charAt(0) : 'G'}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="font-black text-white text-sm truncate">{t?.name || 'Guru Tanpa Nama'}</p>
-                            <p className="font-medium text-slate-400 text-[10px] truncate">{t?.email || 'Email tidak tersedia'}</p>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <button onClick={() => openEditGuruModal(t)} title="Edit Nama" className="flex items-center justify-center text-slate-300 bg-slate-800 hover:bg-slate-700 py-2 rounded-lg transition-all shadow-sm active:scale-95 border border-slate-700"><UserCog size={14}/></button>
-                          <button onClick={() => handleResetPassword(t.email)} title="Reset Password" className="flex items-center justify-center text-amber-500 bg-amber-950/20 hover:bg-amber-600 hover:text-white py-2 rounded-lg transition-all shadow-sm active:scale-95 border border-amber-900/30"><KeyRound size={14}/></button>
-                          <button onClick={() => deleteTeacher(t.id)} title="Hapus Guru" className="flex items-center justify-center text-red-500 bg-red-950/20 hover:bg-red-900 hover:text-white py-2 rounded-lg transition-all shadow-sm active:scale-95 border border-red-900/30"><Trash2 size={14}/></button>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-x-auto shadow-lg">
+                    <table className="w-full text-left text-sm min-w-[700px] whitespace-nowrap">
+                      <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                        <tr>
+                          <th className="py-4 px-6 w-16 text-center font-bold uppercase tracking-wider text-xs">No</th>
+                          <th className="py-4 px-6 font-bold uppercase tracking-wider text-xs">Nama Lengkap</th>
+                          <th className="py-4 px-6 font-bold uppercase tracking-wider text-xs">Email Akun</th>
+                          <th className="py-4 px-6 text-center font-bold uppercase tracking-wider text-xs w-48">Tindakan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/50">
+                        {activeTeachers.map((t, i) => (
+                          <tr key={t.id} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="py-4 px-6 text-center font-bold text-slate-500">{i + 1}</td>
+                            <td className="py-4 px-6">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 shrink-0 bg-slate-800 text-amber-500 rounded-full flex items-center justify-center font-black text-sm uppercase border border-slate-700">
+                                  {t?.name ? t.name.charAt(0) : 'G'}
+                                </div>
+                                <p className="font-black text-white text-sm truncate max-w-[250px]">{t?.name || 'Guru Tanpa Nama'}</p>
+                              </div>
+                            </td>
+                            <td className="py-4 px-6 text-slate-400 text-sm">{t?.email || 'Tidak tersedia'}</td>
+                            <td className="py-4 px-6">
+                              <div className="flex justify-center gap-2">
+                                <button onClick={() => openEditGuruModal(t)} title="Edit Nama" className="text-slate-400 hover:text-amber-400 bg-slate-800/50 hover:bg-slate-800 p-2 rounded-lg transition-all active:scale-95 border border-slate-700/50"><UserCog size={16}/></button>
+                                <button onClick={() => handleResetPassword(t.email)} title="Reset Password" className="text-slate-400 hover:text-amber-400 bg-slate-800/50 hover:bg-slate-800 p-2 rounded-lg transition-all active:scale-95 border border-slate-700/50"><KeyRound size={16}/></button>
+                                <button onClick={() => deleteTeacher(t.id)} title="Hapus Guru" className="text-slate-400 hover:text-red-500 bg-slate-800/50 hover:bg-red-950/30 p-2 rounded-lg transition-all active:scale-95 border border-slate-700/50"><Trash2 size={16}/></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* TAB BARU: REKAP NILAI PUSAT UNTUK SUPER ADMIN (COMPACT & RESPONSIVE) */}
+          {/* TAB REKAP NILAI PUSAT UNTUK SUPER ADMIN */}
           {activeTab === 'recap' && (
             <div className="space-y-4 max-w-7xl mx-auto print:max-w-full animate-in fade-in duration-300">
               <div className="bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-800 print:hidden">
@@ -531,7 +536,7 @@ useEffect(() => {
                   </div>
                 </div>
                 
-                {/* 4 FILTER SAKTI ADMIN (UKURAN LEBIH COMPACT) */}
+                {/* 4 FILTER SAKTI ADMIN */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
                   <select value={adminRecapGuru} onChange={e => {setAdminRecapGuru(e.target.value); setAdminRecapMapel(''); setAdminRecapKelas(''); setAdminRecapToken('');}} className="w-full p-2.5 text-xs border border-slate-700 rounded-xl bg-slate-950 outline-none font-bold text-white cursor-pointer focus:border-amber-500"><option value="">-- Semua Guru --</option>{availableRecapGurus.map(g => <option key={g}>{g}</option>)}</select>
                   <select value={adminRecapMapel} onChange={e => {setAdminRecapMapel(e.target.value); setAdminRecapKelas(''); setAdminRecapToken('');}} className="w-full p-2.5 text-xs border border-slate-700 rounded-xl bg-slate-950 outline-none font-bold text-white cursor-pointer focus:border-amber-500"><option value="">-- Semua Mapel --</option>{availableRecapMapels.map(m => <option key={m}>{m}</option>)}</select>
@@ -540,9 +545,9 @@ useEffect(() => {
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <button onClick={() => { setAdminPrintMode('rekap'); setTimeout(() => window.print(), 300); }} className="w-full bg-blue-900/40 hover:bg-blue-600 border border-blue-800 text-blue-400 hover:text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all text-xs"><BarChart size={14}/> Cetak Daftar Nilai</button>
-                  <button onClick={() => { setAdminPrintMode('berita_acara'); setTimeout(() => window.print(), 300); }} className="w-full bg-purple-900/40 hover:bg-purple-600 border border-purple-800 text-purple-400 hover:text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all text-xs"><FileText size={14}/> Berita Acara Ujian</button>
-                  <button onClick={() => { setAdminPrintMode('daftar_hadir'); setTimeout(() => window.print(), 300); }} className="w-full bg-emerald-900/40 hover:bg-emerald-600 border border-emerald-800 text-emerald-400 hover:text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all text-xs"><Users size={14}/> Daftar Hadir Siswa</button>
+                  <button onClick={() => { setAdminPrintMode('rekap'); setTimeout(() => window.print(), 300); }} className="w-full bg-blue-900/40 hover:bg-blue-600 border border-blue-800 text-blue-400 hover:text-white py-2.5 rounded-xl font-black flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all text-xs"><BarChart size={14}/> Cetak Daftar Nilai</button>
+                  <button onClick={() => { setAdminPrintMode('berita_acara'); setTimeout(() => window.print(), 300); }} className="w-full bg-purple-900/40 hover:bg-purple-600 border border-purple-800 text-purple-400 hover:text-white py-2.5 rounded-xl font-black flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all text-xs"><FileText size={14}/> Berita Acara Ujian</button>
+                  <button onClick={() => { setAdminPrintMode('daftar_hadir'); setTimeout(() => window.print(), 300); }} className="w-full bg-emerald-900/40 hover:bg-emerald-600 border border-emerald-800 text-emerald-400 hover:text-white py-2.5 rounded-xl font-black flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all text-xs"><Users size={14}/> Daftar Hadir Siswa</button>
                 </div>
               </div>
               
@@ -607,7 +612,7 @@ useEffect(() => {
                 </table>
               </div>
               
-              {/* === TAMPILAN UI TABEL NILAI ADMIN (SEBELUM DI PRINT) COMPACT === */}
+              {/* === TAMPILAN UI TABEL NILAI ADMIN (SEBELUM DI PRINT) === */}
               <div className="print:hidden">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-900 p-3 rounded-t-xl border border-b-0 border-slate-800 gap-3">
                   <div className="text-xs font-bold text-slate-400">
@@ -615,9 +620,8 @@ useEffect(() => {
                   </div>
                 </div>
 
-                {/* TABEL RESPONSIVE */}
                 <div className="bg-slate-900 rounded-b-xl border border-slate-800 overflow-x-auto shadow-sm">
-                  <table className="w-full text-left text-xs min-w-[700px]">
+                  <table className="w-full text-left text-xs min-w-[700px] whitespace-nowrap">
                     <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
                       <tr>
                         <th className="py-2.5 px-3 w-10 text-center">
@@ -643,13 +647,13 @@ useEffect(() => {
                             />
                           </td>
                           <td className="py-2.5 px-3">
-                            <p className="font-black text-white text-sm truncate max-w-[180px]">{s.name}</p>
+                            <p className="font-black text-white text-sm truncate max-w-[250px]">{s.name}</p>
                             {s.isEssayGraded && <span className="text-[8px] font-black bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30 mt-0.5 inline-block">ESAI DINILAI</span>}
                           </td>
                           <td className="py-2.5 px-3 text-center font-bold text-slate-300">{s.class}-{s.subKelas}</td>
                           <td className="py-2.5 px-3">
                             <p className="font-bold text-amber-500">{s.mapel}</p>
-                            <p className="text-[9px] text-slate-500 truncate max-w-[140px]">{s.teacherEmail}</p>
+                            <p className="text-[9px] text-slate-500 truncate max-w-[200px]">{s.teacherEmail}</p>
                           </td>
                           <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-400 text-[10px] bg-slate-950/50">{s.token}</td>
                           <td className="py-2.5 px-3 text-center">
