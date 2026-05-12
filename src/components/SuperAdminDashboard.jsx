@@ -3,7 +3,7 @@ import { db, auth } from '../firebase';
 import { ref, onValue, update, remove, set } from 'firebase/database';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import * as XLSX from 'xlsx'; 
-import { Activity, BookOpen, Users, LogOut, ShieldAlert, CheckCircle, XCircle, Trash2, Edit, AlertTriangle, Menu, X, ShieldCheck, Lock, Unlock, UserCog, Plus, Crown, Download, Settings, KeyRound, Landmark, Zap, ImageIcon, Eye, FileText, ClipboardList, BarChart } from 'lucide-react';
+import { Activity, BookOpen, Users, LogOut, ShieldAlert, CheckCircle, XCircle, Trash2, Edit, AlertTriangle, Menu, X, ShieldCheck, Lock, Unlock, UserCog, Plus, Crown, Download, Settings, KeyRound, Landmark, Zap, ImageIcon, Eye, FileText, ClipboardList, BarChart, CheckSquare } from 'lucide-react';
 import Latex from 'react-latex-next';
 import 'katex/dist/katex.min.css';
 
@@ -21,14 +21,16 @@ export default function SuperAdminDashboard({ onLogout }) {
   const [filterGuru, setFilterGuru] = useState('');
   const [filterMapel, setFilterMapel] = useState('');
   
-  // === STATE REKAP NILAI ADMIN PUSAT (DENGAN FILTER KELAS) ===
+  // === STATE REKAP NILAI ADMIN PUSAT ===
   const [adminRecapGuru, setAdminRecapGuru] = useState('');
   const [adminRecapMapel, setAdminRecapMapel] = useState('');
-  const [adminRecapKelas, setAdminRecapKelas] = useState(''); // <-- FILTER KELAS DITAMBAHKAN
+  const [adminRecapKelas, setAdminRecapKelas] = useState(''); 
   const [adminRecapToken, setAdminRecapToken] = useState('');
   const [adminPrintMode, setAdminPrintMode] = useState('rekap');
+  
+  // === FITUR HAPUS BANYAK (BATCH DELETE) ===
+  const [selectedRecaps, setSelectedRecaps] = useState([]);
 
-  // === FORM SOAL V3 (PG, PGK, ESAI, WACANA) ===
   const defaultSoalForm = { 
     jenisSoal: 'PG', kodeWacana: '', teksWacana: '',
     mapel: '', kelas: '', pertanyaan: ' ', gambar: '', 
@@ -59,7 +61,6 @@ export default function SuperAdminDashboard({ onLogout }) {
 
   const pendingTeachers = data.users.filter(u => u?.status === 'pending' && u?.email !== 'admin@sekolah.com');
   const activeTeachers = data.users.filter(u => u?.status !== 'pending' && u?.email !== 'admin@sekolah.com');
-  
   const allAdminSessions = data.sessions.sort((a,b) => b.timestamp - a.timestamp);
   
   const stats = {
@@ -73,28 +74,12 @@ export default function SuperAdminDashboard({ onLogout }) {
   const filteredSoal = data.bank.filter(q => (filterGuru === '' || q?.teacherEmail === filterGuru) && (filterMapel === '' || q?.mapel === filterMapel));
 
   // ==================================================
-  // FILTER LOGIC UNTUK REKAP ADMIN PUSAT (BERTAHAP)
+  // FILTER LOGIC UNTUK REKAP ADMIN PUSAT
   // ==================================================
   const availableRecapGurus = [...new Set(data.lead.map(s => s?.teacherEmail).filter(Boolean))];
-  
-  const availableRecapMapels = [...new Set(data.lead
-    .filter(s => adminRecapGuru === '' || s.teacherEmail === adminRecapGuru)
-    .map(s => s?.mapel).filter(Boolean))];
-  
-  const availableRecapKelasList = [...new Set(data.lead
-    .filter(s => 
-      (adminRecapGuru === '' || s.teacherEmail === adminRecapGuru) && 
-      (adminRecapMapel === '' || s.mapel === adminRecapMapel)
-    )
-    .map(s => s?.class).filter(Boolean))];
-
-  const availableRecapTokens = [...new Set(data.lead
-    .filter(s => 
-      (adminRecapGuru === '' || s.teacherEmail === adminRecapGuru) && 
-      (adminRecapMapel === '' || s.mapel === adminRecapMapel) &&
-      (adminRecapKelas === '' || s.class === adminRecapKelas)
-    )
-    .map(s => s?.token).filter(Boolean))];
+  const availableRecapMapels = [...new Set(data.lead.filter(s => adminRecapGuru === '' || s.teacherEmail === adminRecapGuru).map(s => s?.mapel).filter(Boolean))];
+  const availableRecapKelasList = [...new Set(data.lead.filter(s => (adminRecapGuru === '' || s.teacherEmail === adminRecapGuru) && (adminRecapMapel === '' || s.mapel === adminRecapMapel)).map(s => s?.class).filter(Boolean))];
+  const availableRecapTokens = [...new Set(data.lead.filter(s => (adminRecapGuru === '' || s.teacherEmail === adminRecapGuru) && (adminRecapMapel === '' || s.mapel === adminRecapMapel) && (adminRecapKelas === '' || s.class === adminRecapKelas)).map(s => s?.token).filter(Boolean))];
 
   const filteredAdminLeaderboard = data.lead.filter(s => 
     (adminRecapGuru === '' || s?.teacherEmail === adminRecapGuru) && 
@@ -102,6 +87,30 @@ export default function SuperAdminDashboard({ onLogout }) {
     (adminRecapKelas === '' || s?.class === adminRecapKelas) && 
     (adminRecapToken === '' || s?.token === adminRecapToken)
   ).sort((a,b) => b.score - a.score);
+
+  // Fungsi Toggle Pilihan Rekap
+  const toggleSelectRecap = (id) => {
+    setSelectedRecaps(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
+  };
+
+  const handleSelectAllRecaps = (e) => {
+    if (e.target.checked) setSelectedRecaps(filteredAdminLeaderboard.map(s => s.id));
+    else setSelectedRecaps([]);
+  };
+
+  const handleBatchDeleteRecaps = async () => {
+    if (selectedRecaps.length === 0) return;
+    const konfirmasi = window.prompt(`🚨 HAPUS BANYAK DATA:\nAnda akan menghapus ${selectedRecaps.length} data siswa terpilih secara permanen!\n\nKetik kata 'HAPUS' untuk melanjutkan:`);
+    if (konfirmasi === 'HAPUS') {
+      try {
+        await Promise.all(selectedRecaps.map(id => remove(ref(db, `leaderboard/${id}`))));
+        setSelectedRecaps([]);
+        alert("Data terpilih berhasil dihancurkan!");
+      } catch (err) { alert("Gagal menghapus: " + err.message); }
+    } else if (konfirmasi !== null) {
+      alert("❌ Dibatalkan: Konfirmasi salah.");
+    }
+  };
 
   // === FITUR MASTER KENDALI GLOBAL ===
   const triggerGlobalUpdate = () => {
@@ -139,9 +148,7 @@ export default function SuperAdminDashboard({ onLogout }) {
   const toggleSessionStatus = (id, currentStatus) => {
     const newStatus = currentStatus === 'open' ? 'closed' : 'open';
     const msg = newStatus === 'open' ? "BUKA KUNCI sesi ini agar siswa bisa masuk lagi?" : "KUNCI PAKSA sesi ini sekarang?";
-    if(window.confirm(msg)) {
-       update(ref(db, `exam_sessions/${id}`), { status: newStatus });
-    }
+    if(window.confirm(msg)) { update(ref(db, `exam_sessions/${id}`), { status: newStatus }); }
   };
   
   const deleteSoalGlobal = (id) => { if(window.confirm("Hapus soal ini dari PUSAT?")) remove(ref(db, `bank_soal/${id}`)); };
@@ -149,11 +156,12 @@ export default function SuperAdminDashboard({ onLogout }) {
   // Hapus single recap oleh Admin
   const handleDeleteAdminSingleRecap = (id, studentName) => {
     if (window.confirm(`OTORITAS ADMIN:\nYakin hapus data ujian "${studentName}" secara permanen?`)) {
-      remove(ref(db, `leaderboard/${id}`)).then(() => alert("Data dihapus!")).catch(err => alert("Gagal: " + err.message));
+      remove(ref(db, `leaderboard/${id}`)).then(() => {
+         setSelectedRecaps(prev => prev.filter(item => item !== id));
+      }).catch(err => alert("Gagal: " + err.message));
     }
   };
 
-  // === V3: FUNGSI EDIT SOAL ADMIN ===
   const openEditSoalModal = (q) => { 
     setSoalFormData({ 
       jenisSoal: q?.jenisSoal || 'PG', kodeWacana: q?.kodeWacana || '', teksWacana: q?.teksWacana || '',
@@ -186,12 +194,11 @@ export default function SuperAdminDashboard({ onLogout }) {
 
   const resetLiveStudents = () => { if(window.confirm("🚨 Hapus semua data Live Siswa?")) { remove(ref(db, 'live_students')); alert("Data dibersihkan."); } };
   const resetAllSessions = () => { if(window.confirm("🚨 Hapus semua sesi ujian?")) { remove(ref(db, 'exam_sessions')); alert("Data direset."); } };
-  
-  // Keamanan Ganda Hapus Nilai Pusat
   const resetRekapNilai = () => { 
     const konfirmasi = window.prompt("🚨 KENDALI PUSAT!\nTindakan ini akan MENGHAPUS PERMANEN SELURUH NILAI di sekolah.\n\nKetik kata 'KOSONGKAN' di bawah ini untuk melanjutkan:");
     if (konfirmasi === "KOSONGKAN") { 
       remove(ref(db, 'leaderboard')); alert("Database Nilai berhasil dikosongkan."); 
+      setSelectedRecaps([]);
     } else if (konfirmasi !== null) {
       alert("❌ Dibatalkan: Kata sandi konfirmasi salah.");
     }
@@ -224,7 +231,6 @@ export default function SuperAdminDashboard({ onLogout }) {
 
   return (
     <div className="flex h-screen bg-slate-950 overflow-hidden font-sans text-slate-200">
-      {/* CSS KHUSUS PRINT - PECAH BATAS LAYAR & REPEAT HEADER */}
       <style>{`
         @media print { 
           @page { margin: 1cm; size: portrait; } 
@@ -257,7 +263,6 @@ export default function SuperAdminDashboard({ onLogout }) {
           <NavItem tab="bank" icon={BookOpen} label="Bank Soal Global" />
           <NavItem tab="guru" icon={Users} label="Manajemen Personalia" badge={pendingTeachers.length} />
           <div className="my-4 border-t border-slate-800"></div>
-          {/* TAB BARU UNTUK ADMIN */}
           <NavItem tab="recap" icon={ClipboardList} label="Rekap Nilai Pusat" />
         </nav>
         
@@ -354,7 +359,6 @@ export default function SuperAdminDashboard({ onLogout }) {
                             <span className={`text-xs font-black px-3 py-1.5 rounded-md ${s.status === 'open' ? 'text-slate-900 bg-amber-500' : 'text-slate-300 bg-slate-800'}`}>{s?.mapel}</span>
                             <span className="text-xs font-bold text-slate-300 bg-slate-800 px-3 py-1.5 rounded-md border border-slate-700">Tk. {s?.kelas}-{s?.subKelas}</span>
                         </div>
-                        {/* V3: Tampilkan Info Kuota di Radar Admin */}
                         <div className="bg-slate-950 p-2 rounded-lg border border-slate-800 flex gap-3 text-[10px] font-bold text-slate-400">
                            <span className="text-blue-400">PG: {s.kuotaPG || 0}</span>
                            <span className="text-orange-400">PGK: {s.kuotaPGK || 0}</span>
@@ -373,8 +377,8 @@ export default function SuperAdminDashboard({ onLogout }) {
             <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
               <h3 className="text-2xl font-black text-white flex items-center gap-3"><BookOpen className="text-amber-500"/> Gudang Data Soal V3</h3>
               <div className="bg-slate-900 p-5 rounded-3xl shadow-lg border border-slate-800 flex flex-col sm:flex-row gap-4">
-                <select value={filterGuru} onChange={e => setFilterGuru(e.target.value)} className="flex-1 p-4 border border-slate-700 rounded-xl bg-slate-950 font-bold text-white outline-none focus:border-amber-500"><option value="">-- Semua Pencipta Soal --</option>{availableGuruSoal.map(g => <option key={g}>{g}</option>)}</select>
-                <select value={filterMapel} onChange={e => setFilterMapel(e.target.value)} className="flex-1 p-4 border border-slate-700 rounded-xl bg-slate-950 font-bold text-white outline-none focus:border-amber-500"><option value="">-- Semua Bidang Studi --</option>{availableMapelSoal.map(m => <option key={m}>{m}</option>)}</select>
+                <select value={filterGuru} onChange={e => setFilterGuru(e.target.value)} className="flex-1 p-3 text-sm border border-slate-700 rounded-xl bg-slate-950 font-bold text-white outline-none focus:border-amber-500"><option value="">-- Semua Pencipta Soal --</option>{availableGuruSoal.map(g => <option key={g}>{g}</option>)}</select>
+                <select value={filterMapel} onChange={e => setFilterMapel(e.target.value)} className="flex-1 p-3 text-sm border border-slate-700 rounded-xl bg-slate-950 font-bold text-white outline-none focus:border-amber-500"><option value="">-- Semua Bidang Studi --</option>{availableMapelSoal.map(m => <option key={m}>{m}</option>)}</select>
               </div>
 
               <div className="space-y-4">
@@ -384,8 +388,6 @@ export default function SuperAdminDashboard({ onLogout }) {
                       <div className="flex flex-wrap gap-2 mb-4 border-b border-slate-800 pb-4">
                         <span className="text-xs font-black bg-amber-500 text-black px-3 py-1.5 rounded-md">{q?.teacherEmail}</span>
                         <span className="text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-md">{q?.mapel} (Tk. {q?.kelas})</span>
-                        
-                        {/* V3: Label Tipe Soal di Admin */}
                         <span className={`text-xs font-black px-3 py-1.5 rounded-md border ${(!q.jenisSoal || q.jenisSoal === 'PG') ? 'bg-blue-900/40 text-blue-400 border-blue-800/50' : q.jenisSoal === 'PGK' ? 'bg-orange-900/40 text-orange-400 border-orange-800/50' : 'bg-purple-900/40 text-purple-400 border-purple-800/50'}`}>
                            Tipe: {q.jenisSoal || 'PG'}
                         </span>
@@ -398,7 +400,6 @@ export default function SuperAdminDashboard({ onLogout }) {
                         </div>
                       )}
 
-                      {/* V3: Tampilkan Teks Wacana di Admin */}
                       {q?.teksWacana && (
                          <div className="mb-4 p-4 bg-slate-950 border-l-4 border-slate-600 rounded-r-xl text-sm font-medium text-slate-400">
                              <Latex>{String(q.teksWacana)}</Latex>
@@ -410,7 +411,6 @@ export default function SuperAdminDashboard({ onLogout }) {
                          <div className="flex-1"><Latex>{String(q?.pertanyaan || ' ')}</Latex></div>
                       </div>
                       
-                      {/* V3: Jangan Render Opsi Jika Esai */}
                       {(!q.jenisSoal || q.jenisSoal !== 'ESAI') && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-400 font-medium">
                             {['A','B','C','D'].map(opt => {
@@ -490,28 +490,33 @@ export default function SuperAdminDashboard({ onLogout }) {
             </div>
           )}
 
-          {/* TAB BARU: REKAP NILAI PUSAT UNTUK SUPER ADMIN */}
+          {/* TAB BARU: REKAP NILAI PUSAT UNTUK SUPER ADMIN (COMPACT & RESPONSIVE) */}
           {activeTab === 'recap' && (
             <div className="space-y-6 max-w-6xl mx-auto print:max-w-full animate-in fade-in duration-300">
-              <div className="bg-slate-900 p-6 md:p-8 rounded-3xl shadow-lg border border-slate-800 print:hidden space-y-5">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-4">
+              <div className="bg-slate-900 p-5 lg:p-8 rounded-3xl shadow-lg border border-slate-800 print:hidden">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-4 mb-4">
                   <h3 className="text-xl font-black text-white flex items-center gap-3"><ClipboardList className="text-amber-500"/> Pusat Rekapitulasi Nilai</h3>
-                  {/* Tombol Hapus Semua dengan Keamanan Ganda */}
-                  <button onClick={resetRekapNilai} className="w-full md:w-auto bg-red-950/50 hover:bg-red-900 border border-red-900 text-red-500 hover:text-white px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-colors shadow-sm"><Trash2 size={18}/> Kosongkan Seluruh Database Nilai</button>
+                  <div className="flex gap-2 w-full md:w-auto">
+                    {/* Tombol Hapus Banyak (Batch Delete) */}
+                    {selectedRecaps.length > 0 && (
+                      <button onClick={handleBatchDeleteRecaps} className="flex-1 md:flex-none bg-red-600 hover:bg-red-500 text-white px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-colors shadow-md text-sm"><Trash2 size={16}/> Hapus {selectedRecaps.length} Terpilih</button>
+                    )}
+                    <button onClick={resetRekapNilai} className="flex-1 md:flex-none bg-slate-950 hover:bg-red-950 border border-slate-800 hover:border-red-900 text-red-500 hover:text-white px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-colors shadow-sm text-sm"><AlertTriangle size={16}/> Kosongkan Database</button>
+                  </div>
                 </div>
                 
-                {/* UPDATE: 4 FILTER SAKTI ADMIN (TERMASUK KELAS) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <select value={adminRecapGuru} onChange={e => {setAdminRecapGuru(e.target.value); setAdminRecapMapel(''); setAdminRecapKelas(''); setAdminRecapToken('');}} className="w-full p-4 border border-slate-700 rounded-2xl bg-slate-950 outline-none font-bold text-white cursor-pointer focus:border-amber-500"><option value="">-- Semua Guru --</option>{availableRecapGurus.map(g => <option key={g}>{g}</option>)}</select>
-                  <select value={adminRecapMapel} onChange={e => {setAdminRecapMapel(e.target.value); setAdminRecapKelas(''); setAdminRecapToken('');}} className="w-full p-4 border border-slate-700 rounded-2xl bg-slate-950 outline-none font-bold text-white cursor-pointer focus:border-amber-500"><option value="">-- Semua Mapel --</option>{availableRecapMapels.map(m => <option key={m}>{m}</option>)}</select>
-                  <select value={adminRecapKelas} onChange={e => {setAdminRecapKelas(e.target.value); setAdminRecapToken('');}} className="w-full p-4 border border-slate-700 rounded-2xl bg-slate-950 outline-none font-bold text-white cursor-pointer focus:border-amber-500"><option value="">-- Semua Kelas --</option>{availableRecapKelasList.map(k => <option key={k}>{k}</option>)}</select>
-                  <select value={adminRecapToken} onChange={e => setAdminRecapToken(e.target.value)} className="w-full p-4 border border-amber-500/30 rounded-2xl bg-amber-500/10 outline-none font-bold text-amber-500 cursor-pointer focus:border-amber-500"><option value="">-- Pilih Token --</option>{availableRecapTokens.map(t => <option key={t}>{t}</option>)}</select>
+                {/* 4 FILTER SAKTI ADMIN (UKURAN LEBIH COMPACT) */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+                  <select value={adminRecapGuru} onChange={e => {setAdminRecapGuru(e.target.value); setAdminRecapMapel(''); setAdminRecapKelas(''); setAdminRecapToken('');}} className="w-full p-2.5 text-sm border border-slate-700 rounded-xl bg-slate-950 outline-none font-bold text-white cursor-pointer focus:border-amber-500"><option value="">-- Semua Guru --</option>{availableRecapGurus.map(g => <option key={g}>{g}</option>)}</select>
+                  <select value={adminRecapMapel} onChange={e => {setAdminRecapMapel(e.target.value); setAdminRecapKelas(''); setAdminRecapToken('');}} className="w-full p-2.5 text-sm border border-slate-700 rounded-xl bg-slate-950 outline-none font-bold text-white cursor-pointer focus:border-amber-500"><option value="">-- Semua Mapel --</option>{availableRecapMapels.map(m => <option key={m}>{m}</option>)}</select>
+                  <select value={adminRecapKelas} onChange={e => {setAdminRecapKelas(e.target.value); setAdminRecapToken('');}} className="w-full p-2.5 text-sm border border-slate-700 rounded-xl bg-slate-950 outline-none font-bold text-white cursor-pointer focus:border-amber-500"><option value="">-- Semua Kelas --</option>{availableRecapKelasList.map(k => <option key={k}>{k}</option>)}</select>
+                  <select value={adminRecapToken} onChange={e => setAdminRecapToken(e.target.value)} className="w-full p-2.5 text-sm border border-amber-500/30 rounded-xl bg-amber-500/10 outline-none font-bold text-amber-500 cursor-pointer focus:border-amber-500"><option value="">-- Semua Token --</option>{availableRecapTokens.map(t => <option key={t}>{t}</option>)}</select>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4 border-t border-slate-800">
-                  <button onClick={() => { setAdminPrintMode('rekap'); setTimeout(() => window.print(), 300); }} className="w-full bg-blue-900/40 hover:bg-blue-600 border border-blue-800 text-blue-400 hover:text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all tracking-wide"><BarChart size={18}/> Cetak Daftar Nilai</button>
-                  <button onClick={() => { setAdminPrintMode('berita_acara'); setTimeout(() => window.print(), 300); }} className="w-full bg-purple-900/40 hover:bg-purple-600 border border-purple-800 text-purple-400 hover:text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all"><FileText size={18}/> Berita Acara Ujian</button>
-                  <button onClick={() => { setAdminPrintMode('daftar_hadir'); setTimeout(() => window.print(), 300); }} className="w-full bg-emerald-900/40 hover:bg-emerald-600 border border-emerald-800 text-emerald-400 hover:text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all"><Users size={18}/> Daftar Hadir Siswa</button>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <button onClick={() => { setAdminPrintMode('rekap'); setTimeout(() => window.print(), 300); }} className="w-full bg-blue-900/40 hover:bg-blue-600 border border-blue-800 text-blue-400 hover:text-white py-3 rounded-xl font-black flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all text-sm"><BarChart size={16}/> Cetak Daftar Nilai</button>
+                  <button onClick={() => { setAdminPrintMode('berita_acara'); setTimeout(() => window.print(), 300); }} className="w-full bg-purple-900/40 hover:bg-purple-600 border border-purple-800 text-purple-400 hover:text-white py-3 rounded-xl font-black flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all text-sm"><FileText size={16}/> Berita Acara Ujian</button>
+                  <button onClick={() => { setAdminPrintMode('daftar_hadir'); setTimeout(() => window.print(), 300); }} className="w-full bg-emerald-900/40 hover:bg-emerald-600 border border-emerald-800 text-emerald-400 hover:text-white py-3 rounded-xl font-black flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all text-sm"><Users size={16}/> Daftar Hadir Siswa</button>
                 </div>
               </div>
               
@@ -521,11 +526,11 @@ export default function SuperAdminDashboard({ onLogout }) {
                 <h3 className="text-center font-black text-lg mb-6 underline">DAFTAR NILAI UJIAN SISWA (MASTER)</h3>
                 <p className="mb-4 text-sm font-bold">Guru Mapel: {adminRecapGuru || 'Semua'} <br/> Mata Pelajaran: {adminRecapMapel || 'Semua'} <br/> Kelas: {adminRecapKelas || 'Semua'} | Token Sesi: {adminRecapToken || 'Semua'}</p>
                 <table className="w-full text-left text-sm">
-                  <thead><tr><th className="py-2 px-3 w-12 text-center">No</th><th className="py-2 px-3">Nama Lengkap Siswa</th><th className="py-2 px-3">Kelas / Ruang</th><th className="py-2 px-3 text-center">Skor Akhir</th></tr></thead>
+                  <thead><tr><th className="py-2 px-3 w-12 text-center">No</th><th className="py-2 px-3">Nama Lengkap Siswa</th><th className="py-2 px-3 text-center">Kelas / Ruang</th><th className="py-2 px-3 text-center">Skor Akhir</th></tr></thead>
                   <tbody>
                     {filteredAdminLeaderboard.map((s, i) => (
                       <tr key={s?.id || i}>
-                        <td className="py-2 px-3 text-center">{i+1}</td><td className="py-2 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td><td className="py-2 px-3">{s?.class}-{s?.subKelas}</td><td className="py-2 px-3 text-center font-black">{s?.score || 0}</td>
+                        <td className="py-2 px-3 text-center">{i+1}</td><td className="py-2 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td><td className="py-2 px-3 text-center">{s?.class}-{s?.subKelas}</td><td className="py-2 px-3 text-center font-black">{s?.score || 0}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -576,31 +581,59 @@ export default function SuperAdminDashboard({ onLogout }) {
                 </table>
               </div>
               
-              {/* TAMPILAN UI KARTU NILAI (SEBELUM DI PRINT) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 print:hidden">
-                {filteredAdminLeaderboard.map((s, i) => (
-                  <div key={s?.id || i} className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-lg flex flex-col hover:border-amber-500/30 transition-colors relative overflow-hidden">
-                    {s.isEssayGraded && <div className="absolute -right-6 -top-6 bg-emerald-600 text-white text-[10px] font-black px-8 py-2 transform rotate-45 shadow-sm mt-8">ESAI DINILAI</div>}
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="bg-slate-800 text-slate-300 text-xs font-black px-2 py-0.5 rounded-md border border-slate-700">#{i+1}</span>
-                        <p className="font-black text-white text-lg leading-tight truncate max-w-[150px] sm:max-w-[200px]">{s?.name || 'Anonim'}</p>
-                      </div>
-                      <button onClick={() => handleDeleteAdminSingleRecap(s.id, s.name)} title="Hapus Data Ini" className="text-red-500 hover:text-red-400 hover:bg-red-950/50 p-1.5 rounded-lg transition-colors active:scale-95">
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                    
-                    <div className="flex items-end justify-between mt-2">
-                      <div className="flex flex-col">
-                         <p className="text-xs font-bold text-slate-400">{s?.mapel || '-'} • Kls: {s?.class || '-'}-{s?.subKelas || '-'}</p>
-                         <p className="text-[10px] font-bold text-amber-500/70 mt-1">Guru: {s?.teacherEmail}</p>
-                      </div>
-                      <div className="text-3xl font-black text-amber-500 bg-amber-500/10 px-4 py-2 rounded-2xl border border-amber-500/20 shadow-inner">{s?.score || 0}</div>
-                    </div>
+              {/* === TAMPILAN UI TABEL NILAI ADMIN (SEBELUM DI PRINT) COMPACT === */}
+              <div className="print:hidden">
+                <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-lg">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                      <thead className="bg-slate-950 text-slate-400">
+                        <tr>
+                          <th className="p-4 w-10 text-center border-b border-slate-800">
+                            <input type="checkbox" className="accent-amber-500 w-4 h-4 cursor-pointer" 
+                              onChange={handleSelectAllRecaps} 
+                              checked={selectedRecaps.length === filteredAdminLeaderboard.length && filteredAdminLeaderboard.length > 0} 
+                            />
+                          </th>
+                          <th className="p-4 border-b border-slate-800 font-bold uppercase tracking-wider text-xs">Identitas Siswa</th>
+                          <th className="p-4 border-b border-slate-800 font-bold uppercase tracking-wider text-xs text-center">Kelas</th>
+                          <th className="p-4 border-b border-slate-800 font-bold uppercase tracking-wider text-xs">Mapel & Guru</th>
+                          <th className="p-4 border-b border-slate-800 font-bold uppercase tracking-wider text-xs text-center">Token</th>
+                          <th className="p-4 border-b border-slate-800 font-bold uppercase tracking-wider text-xs text-center">Skor Akhir</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/50">
+                        {filteredAdminLeaderboard.map((s, i) => (
+                          <tr key={s.id} className="hover:bg-slate-800/30 transition-colors">
+                            <td className="p-4 text-center">
+                              <input type="checkbox" className="accent-amber-500 w-4 h-4 cursor-pointer" 
+                                checked={selectedRecaps.includes(s.id)} 
+                                onChange={() => toggleSelectRecap(s.id)} 
+                              />
+                            </td>
+                            <td className="p-4">
+                              <p className="font-black text-white text-base truncate max-w-[200px]">{s.name}</p>
+                              {s.isEssayGraded && <span className="text-[9px] font-black bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30 mt-1 inline-block">ESAI DINILAI</span>}
+                            </td>
+                            <td className="p-4 text-center font-bold text-slate-300">{s.class}-{s.subKelas}</td>
+                            <td className="p-4">
+                              <p className="font-bold text-amber-500">{s.mapel}</p>
+                              <p className="text-[10px] text-slate-500 truncate max-w-[150px]">{s.teacherEmail}</p>
+                            </td>
+                            <td className="p-4 text-center font-mono font-bold text-slate-400 text-xs">{s.token}</td>
+                            <td className="p-4 text-center">
+                              <span className="text-xl font-black text-white bg-slate-950 px-3 py-1 rounded-lg border border-slate-700 shadow-inner">{s.score}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                ))}
-                {filteredAdminLeaderboard.length === 0 && <div className="col-span-full text-center p-12 bg-slate-900 rounded-3xl border border-dashed border-slate-700 text-slate-500 font-medium">Data rekap nilai pusat belum tersedia untuk filter ini.</div>}
+                  {filteredAdminLeaderboard.length === 0 && (
+                    <div className="text-center p-12 bg-slate-900 border-t border-slate-800 text-slate-500 font-medium">
+                      Data rekap nilai pusat belum tersedia untuk filter ini.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
