@@ -4,37 +4,36 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 // ==========================================
-// IMPORT HALAMAN (Nanti kita buat filenya satu-satu)
+// IMPORT HALAMAN ASLI (V3 SAAS)
 // ==========================================
 import LoginPortal from './pages/auth/LoginPortal';
-// Placeholder untuk komponen yang akan datang
-const SuperAdminDashboard = () => <div className="p-10 text-center font-bold">Master Dashboard (Soon)</div>;
-const TeacherDashboard = () => <div className="p-10 text-center font-bold">Teacher Dashboard (Soon)</div>;
-const StudentDashboard = () => <div className="p-10 text-center font-bold">Student Dashboard (Soon)</div>;
-const ExamRoom = () => <div className="p-10 text-center font-bold">Exam Room (Soon)</div>;
-const ProctorDashboard = () => <div className="p-10 text-center font-bold">Proctor Dashboard (Soon)</div>;
+import MasterDashboard from './pages/superadmin/MasterDashboard';
+import SchoolAdminDashboard from './pages/teacher/SchoolAdminDashboard';
+import TeacherDashboard from './pages/teacher/TeacherDashboard';
+import ExamRoom from './pages/student/ExamRoom';
+import ResultPage from './pages/student/ResultPage';
+import ProctorDashboard from './pages/teacher/ProctorDashboard';
 
 // ==========================================
 // SATPAM DIGITAL (ROLE-BASED PROTECTED ROUTE)
 // ==========================================
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { currentUser, userData, loading } = useAuth();
-  
-  // Karena siswa login pakai Token/LocalStorage (bukan email), kita buat bypass aman
-  const isStudent = allowedRoles.includes('student');
   const studentData = localStorage.getItem('studentData');
 
-  if (loading) return null; // Loading state sudah diurus oleh AuthProvider
+  if (loading) return null;
 
-  if (isStudent && studentData) {
-    return children;
-  }
-
-  if (!currentUser) {
+  // Proteksi khusus Siswa
+  if (allowedRoles.includes('student')) {
+    if (studentData) return children;
     return <Navigate to="/login" replace />;
   }
 
+  // Proteksi User (Admin/Guru)
+  if (!currentUser) return <Navigate to="/login" replace />;
+
   if (allowedRoles && userData && !allowedRoles.includes(userData.role)) {
+    // Jika rolenya tidak diizinkan, kembalikan ke login
     return <Navigate to="/login" replace />;
   }
 
@@ -42,7 +41,6 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 };
 
 export default function App() {
-  // Pengaturan Dark Mode Global
   useEffect(() => {
     const isDark = localStorage.getItem('darkMode') === 'true';
     if (isDark) document.documentElement.classList.add('dark');
@@ -60,13 +58,20 @@ export default function App() {
             {/* SUPER ADMIN ROUTE (Master SaaS) */}
             <Route path="/master/*" element={
               <ProtectedRoute allowedRoles={['superadmin']}>
-                <SuperAdminDashboard />
+                <MasterDashboard />
               </ProtectedRoute>
             } />
 
-            {/* TEACHER & SCHOOL ADMIN ROUTE (Client) */}
+            {/* SCHOOL ADMIN ROUTE (Operator Sekolah) */}
+            <Route path="/admin-sekolah/*" element={
+              <ProtectedRoute allowedRoles={['admin_sekolah']}>
+                <SchoolAdminDashboard />
+              </ProtectedRoute>
+            } />
+
+            {/* TEACHER ROUTE (Guru) */}
             <Route path="/teacher/*" element={
-              <ProtectedRoute allowedRoles={['teacher', 'admin_sekolah']}>
+              <ProtectedRoute allowedRoles={['teacher']}>
                 <TeacherDashboard />
               </ProtectedRoute>
             } />
@@ -79,14 +84,15 @@ export default function App() {
             } />
 
             {/* STUDENT ROUTE (Peserta Ujian) */}
-            <Route path="/student/dashboard" element={
+            <Route path="/student/result" element={
               <ProtectedRoute allowedRoles={['student']}>
-                <StudentDashboard />
+                <ResultPage />
               </ProtectedRoute>
             } />
+
             <Route path="/exam" element={
               <ProtectedRoute allowedRoles={['student']}>
-                <ExamRoom />
+                <ExamRoom onFinish={() => window.location.href = '/student/result'} />
               </ProtectedRoute>
             } />
 
