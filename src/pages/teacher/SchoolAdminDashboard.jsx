@@ -1,207 +1,210 @@
 // src/pages/teacher/SchoolAdminDashboard.jsx
 import React, { useState, useEffect } from 'react';
-import { db, getTenantPath } from '../../config/firebase';
+import { db } from '../../config/firebase';
 import { ref, onValue, update, remove, set } from 'firebase/database';
+import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext';
-import * as XLSX from 'xlsx'; 
-import { Users, LogOut, ShieldAlert, CheckCircle, XCircle, Trash2, Edit, AlertTriangle, Menu, X, ClipboardList, BarChart, FileText, Download, UserCog, KeyRound, Building } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { Users, ClipboardList, LogOut, Plus, Trash2, Edit, CheckCircle, XCircle, KeyRound, Menu, X, ShieldCheck, UserCog, BarChart, FileText, Download } from 'lucide-react';
 
-export default function SchoolAdminDashboard({ onLogout }) {
-  const { userData, tenantData } = useAuth();
-  // Karena ini SaaS, kita ambil schoolId dari data user yang sedang login
-  const schoolId = userData?.schoolId || 'default-school';
-  const schoolName = tenantData?.schoolName || 'YAYASAN PENDIDIKAN';
+export default function SchoolAdminDashboard() {
+  const { userData, logout } = useAuth();
+  const schoolId = userData?.schoolId || '';
+  const schoolName = userData?.name || 'Admin Sekolah';
 
   const [activeTab, setActiveTab] = useState('guru');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  // Data Sekolah (Tenant-Specific)
-  const [teachers, setTeachers] = useState([]);
-  const [recapData, setRecapData] = useState([]);
+  const [data, setData] = useState({ users: [], lead: [] });
   
-  // Filter Rekap Nilai
-  const [adminRecapGuru, setAdminRecapGuru] = useState('');
-  const [adminRecapMapel, setAdminRecapMapel] = useState('');
-  const [adminRecapKelas, setAdminRecapKelas] = useState('');
-  const [selectedRecaps, setSelectedRecaps] = useState([]);
-  const [adminPrintMode, setAdminPrintMode] = useState('rekap');
+  // States Modal Guru
+  const [showAddGuruModal, setShowAddGuruModal] = useState(false);
+  const [showEditGuruModal, setShowEditGuruModal] = useState(false);
+  const [editGuruId, setEditGuruId] = useState(null);
+  const [guruForm, setGuruForm] = useState({ name: '', email: '', password: '' });
 
-  // Tarik Data Terisolasi Khusus Sekolah Ini Saja
+  // States Filter Rekap
+  const [recapGuru, setRecapGuru] = useState('');
+  const [recapMapel, setRecapMapel] = useState('');
+  const [recapKelas, setRecapKelas] = useState('');
+  const [printMode, setPrintMode] = useState('rekap');
+
   useEffect(() => {
     if (!schoolId) return;
 
-    // Ambil Data Guru Khusus Sekolah Ini
-    const usersRef = ref(db, 'users');
-    const unsubUsers = onValue(usersRef, (snap) => {
-      if (snap.exists()) {
-        const allUsers = snap.val();
-        const schoolTeachers = Object.keys(allUsers)
-          .map(k => ({ id: k, ...allUsers[k] }))
-          .filter(u => u.schoolId === schoolId && u.role === 'teacher');
-        setTeachers(schoolTeachers);
-      } else setTeachers([]);
+    const fetchData = (path, key) => onValue(ref(db, path), snap => {
+      const val = snap.val();
+      if (val && typeof val === 'object') {
+        setData(prev => ({ ...prev, [key]: Object.keys(val).map(k => ({ ...val[k], id: k })) }));
+      } else {
+        setData(prev => ({ ...prev, [key]: [] }));
+      }
     });
 
-    // Ambil Data Rekap Nilai Khusus Sekolah Ini
-    const recapRef = ref(db, getTenantPath(schoolId, 'leaderboard'));
-    const unsubRecap = onValue(recapRef, (snap) => {
-      if (snap.exists()) {
-        const val = snap.val();
-        setRecapData(Object.keys(val).map(k => ({ id: k, ...val[k] })));
-      } else setRecapData([]);
-    });
-
-    return () => { unsubUsers(); unsubRecap(); };
+    fetchData('users', 'users');
+    fetchData('leaderboard', 'lead');
   }, [schoolId]);
 
-  const pendingTeachers = teachers.filter(u => u.status === 'pending');
-  const activeTeachers = teachers.filter(u => u.status === 'active');
+  // --- FILTER LOGIC KHUSUS SEKOLAH INI ---
+  // 1. Ambil semua guru yang schoolId-nya sama dengan admin ini
+  const schoolTeachers = data.users.filter(u => u.schoolId === schoolId && u.role === 'teacher');
+  const pendingTeachers = schoolTeachers.filter(u => u.status === 'pending');
+  const activeTeachers = schoolTeachers.filter(u => u.status !== 'pending');
+  
+  // 2. Ambil email guru-guru di sekolah ini untuk memfilter nilai di Leaderboard Root
+  const schoolTeacherEmails = schoolTeachers.map(t => t.email);
+  const schoolLeaderboard = data.lead.filter(l => schoolTeacherEmails.includes(l.teacherEmail));
 
-  // ==========================================
-  // LOGIKA MANAJEMEN GURU SEKOLAH
-  // ==========================================
+  // --- FILTER DROPDOWN REKAP ---
+  const availableGurus = [...new Set(schoolLeaderboard.map(s => s?.teacherEmail).filter(Boolean))];
+  const availableMapels = [...new Set(schoolLeaderboard.filter(s => recapGuru === '' || s.teacherEmail === recapGuru).map(s => s?.mapel).filter(Boolean))];
+  const availableKelas = [...new Set(schoolLeaderboard.filter(s => (recapGuru === '' || s.teacherEmail === recapGuru) && (recapMapel === '' || s.mapel === recapMapel)).map(s => s?.class).filter(Boolean))];
+
+  const filteredLeaderboard = schoolLeaderboard.filter(s => 
+    (recapGuru === '' || s?.teacherEmail === recapGuru) && 
+    (recapMapel === '' || s?.mapel === recapMapel) && 
+    (recapKelas === '' || s?.class === recapKelas)
+  ).sort((a, b) => b.score - a.score);
+
+  // --- MANAJEMEN GURU ---
+  const handleAddGuru = async (e) => {
+    e.preventDefault();
+    try {
+      const auth = getAuth();
+      const userCred = await createUserWithEmailAndPassword(auth, guruForm.email, guruForm.password);
+      
+      await set(ref(db, `users/${userCred.user.uid}`), {
+        name: guruForm.name,
+        email: guruForm.email,
+        role: 'teacher',
+        schoolId: schoolId,
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      alert("Akun Guru berhasil dibuat!");
+      setShowAddGuruModal(false);
+      setGuruForm({ name: '', email: '', password: '' });
+    } catch (err) {
+      alert("Gagal membuat guru: " + err.message);
+    }
+  };
+
+  const handleUpdateGuru = (e) => {
+    e.preventDefault();
+    update(ref(db, `users/${editGuruId}`), { name: guruForm.name });
+    alert("Data Guru Diperbarui!");
+    setShowEditGuruModal(false);
+  };
+
   const approveTeacher = (id) => update(ref(db, `users/${id}`), { status: 'active' });
   const rejectTeacher = (id) => { if(window.confirm("Tolak & Hapus pendaftar ini?")) remove(ref(db, `users/${id}`)); };
-  const deleteTeacher = (id) => { 
-    if(window.confirm("PERINGATAN!\nHapus akun guru ini secara permanen dari sistem sekolah?")) {
-        remove(ref(db, `users/${id}`)); 
+  const deleteTeacher = (id) => { if(window.confirm("Hapus akun guru ini dari sekolah?")) remove(ref(db, `users/${id}`)); };
+  const handleResetPassword = (email) => {
+    if (window.confirm(`Kirim instruksi reset kata sandi ke email: ${email}?`)) {
+      sendPasswordResetEmail(getAuth(), email).then(() => alert("Link Reset Sandi Berhasil Dikirim!")).catch((err) => alert("Gagal: " + err.message));
     }
   };
 
-  // ==========================================
-  // LOGIKA REKAP NILAI & FILTER
-  // ==========================================
-  const availableRecapGurus = [...new Set(recapData.map(s => s?.teacherEmail).filter(Boolean))];
-  const availableRecapMapels = [...new Set(recapData.filter(s => adminRecapGuru === '' || s?.teacherEmail === adminRecapGuru).map(s => s?.mapel).filter(Boolean))];
-  const availableRecapKelasList = [...new Set(recapData.filter(s => (adminRecapGuru === '' || s?.teacherEmail === adminRecapGuru) && (adminRecapMapel === '' || s?.mapel === adminRecapMapel)).map(s => s?.class).filter(Boolean))];
-
-  const filteredRecap = recapData.filter(s => 
-    (adminRecapGuru === '' || (s?.teacherEmail || '') === adminRecapGuru) && 
-    (adminRecapMapel === '' || (s?.mapel || '') === adminRecapMapel) && 
-    (adminRecapKelas === '' || (s?.class || '') === adminRecapKelas)
-  ).sort((a,b) => b.score - a.score);
-
-  // === FITUR HAPUS BANYAK (SOP KEAMANAN KETAT) ===
-  const toggleSelectRecap = (id) => setSelectedRecaps(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
-  const handleSelectAllRecaps = (e) => e.target.checked ? setSelectedRecaps(filteredRecap.map(s => s.id)) : setSelectedRecaps([]);
-
-  const handleBatchDeleteRecaps = async () => {
-    if (selectedRecaps.length === 0) return;
-    const konfirmasi = window.prompt(`🚨 HAPUS BANYAK DATA:\nAnda akan menghapus ${selectedRecaps.length} data nilai terpilih secara permanen!\n\nKetik kata 'HAPUS' (huruf besar) untuk melanjutkan:`);
-    if (konfirmasi === 'HAPUS') {
-      try {
-        await Promise.all(selectedRecaps.map(id => remove(ref(db, getTenantPath(schoolId, `leaderboard/${id}`)))));
-        setSelectedRecaps([]);
-        alert("Data terpilih berhasil dihancurkan!");
-      } catch (err) { alert("Gagal menghapus: " + err.message); }
-    } else if (konfirmasi !== null) {
-      alert("❌ Dibatalkan: Kata konfirmasi salah.");
-    }
-  };
-
-  const resetRekapNilai = () => { 
-    const konfirmasi = window.prompt("🚨 KENDALI ADMIN SEKOLAH!\nTindakan ini akan MENGHAPUS PERMANEN SELURUH NILAI di yayasan ini.\n\nKetik kata 'KOSONGKAN' di bawah ini untuk melanjutkan:");
-    if (konfirmasi === "KOSONGKAN") { 
-      remove(ref(db, getTenantPath(schoolId, 'leaderboard'))); 
-      alert("Database Nilai berhasil dikosongkan."); 
-      setSelectedRecaps([]);
-    } else if (konfirmasi !== null) {
-      alert("❌ Dibatalkan: Kata sandi konfirmasi salah.");
-    }
-  };
-
-  const downloadMasterRecap = () => {
-    if (recapData.length === 0) return alert("Belum ada data nilai.");
+  const downloadRecap = () => {
+    if (filteredLeaderboard.length === 0) return alert("Belum ada data nilai.");
     try {
-      const ws = XLSX.utils.json_to_sheet(recapData);
+      const ws = XLSX.utils.json_to_sheet(filteredLeaderboard);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Rekap Sekolah");
-      XLSX.writeFile(wb, `REKAP_${schoolName.replace(/\s+/g, '_')}_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
-    } catch(err) { alert("Gagal mengunduh rekap: " + err.message); }
+      XLSX.writeFile(wb, `REKAP_${schoolId.toUpperCase()}_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
+    } catch(err) { alert("Gagal mengunduh: " + err.message); }
   };
 
   const NavItem = ({ tab, icon: Icon, label, badge }) => (
-    <button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex justify-between items-center p-3 rounded-xl transition-all ${activeTab === tab ? 'bg-amber-500 text-black font-black shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:bg-slate-900 hover:text-white font-bold'}`}>
+    <button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex justify-between items-center p-3.5 rounded-xl transition-all ${activeTab === tab ? 'bg-blue-600 text-white font-black shadow-md' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700 font-bold'}`}>
       <div className="flex items-center gap-3"><Icon size={18}/> <span className="text-sm">{label}</span></div>
-      {badge > 0 && <span className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-md">{badge}</span>}
+      {badge > 0 && <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{badge}</span>}
     </button>
   );
 
   const OfficialHeader = () => (
     <div className="hidden print:block text-center mb-8 border-b-4 border-double border-black pb-4">
-      <h1 className="text-xl font-black uppercase tracking-widest text-black">{schoolName}</h1>
-      <h2 className="text-lg font-black uppercase tracking-widest text-black mt-1">SDIT & PAUD/TK IT DARMA PERTIWI</h2>
-      <p className="mt-2 text-xs font-bold text-gray-800">Dokumen Resmi Administrasi Ujian Berbasis Komputer (CBT)</p>
+      <h1 className="text-xl font-black uppercase tracking-widest text-black">ADMINISTRASI SEKOLAH</h1>
+      <h2 className="text-lg font-black uppercase tracking-widest text-black mt-1">KODE INSTANSI: {schoolId.toUpperCase()}</h2>
+      <p className="mt-2 text-xs font-bold text-gray-800">Dokumen Resmi Laporan Nilai CBT Bersama</p>
     </div>
   );
 
+  if (!schoolId) {
+    return <div className="h-screen flex items-center justify-center bg-slate-50"><p className="text-xl font-bold text-slate-500">Akses Ditolak: Anda tidak terikat dengan instansi sekolah mana pun.</p></div>;
+  }
+
   return (
-    <div className="flex h-screen bg-slate-950 overflow-hidden font-sans text-slate-200">
-      {/* CSS KHUSUS PRINT - MENGHANCURKAN BATAS LAYAR */}
+    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
       <style>{`
         @media print { 
           @page { margin: 1cm; size: portrait; } 
-          html, body, #root { height: auto !important; overflow: visible !important; background: white !important; -webkit-print-color-adjust: exact; margin: 0; font-family: Arial, sans-serif; }
-          .h-screen, .min-h-screen, .overflow-hidden, .overflow-y-auto, main, .flex-1 { 
-            height: auto !important; min-height: auto !important; overflow: visible !important; display: block !important; position: static !important; 
-          } 
+          html, body, #root { height: auto !important; overflow: visible !important; background: white !important; -webkit-print-color-adjust: exact; margin: 0; }
+          .h-screen, .min-h-screen, .overflow-hidden, .overflow-y-auto, main, .flex-1 { height: auto !important; min-height: auto !important; overflow: visible !important; display: block !important; position: static !important; } 
           aside, header, button, select, input, .print\\:hidden { display: none !important; } 
           .print\\:block { display: block !important; } 
-          table { width: 100% !important; border-collapse: collapse; margin-top: 10px; border: 1px solid black !important; page-break-inside: auto; } 
+          table { width: 100% !important; border-collapse: collapse; margin-top: 10px; border: 1.5px solid black !important; page-break-inside: auto; } 
           thead { display: table-header-group; } 
           tr { page-break-inside: avoid; page-break-after: auto; } 
           th, td { border: 1px solid #000 !important; padding: 6px 8px !important; color: black !important; font-size: 11px !important; line-height: 1.3; } 
           th { background-color: #f0f0f0 !important; font-weight: bold; text-transform: uppercase; } 
-          .shadow-sm, .shadow-md, .shadow-xl { box-shadow: none !important; }
         }
       `}</style>
 
-      {isMobileMenuOpen && <div className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />}
+      {isMobileMenuOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />}
       
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-black border-r border-slate-800 flex flex-col transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 shadow-2xl`}>
-        <div className="p-4 border-b border-slate-800 flex justify-between items-center">
-          <h1 className="text-xl font-black text-white flex gap-2 items-center tracking-widest"><Building className="text-amber-500" size={24}/> SEKOLAH</h1>
-          <button className="md:hidden text-slate-500" onClick={() => setIsMobileMenuOpen(false)}><X size={20}/></button>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 shadow-2xl md:shadow-none`}>
+        <div className="p-5 border-b border-slate-100 flex justify-between items-center"><h1 className="text-lg font-black text-blue-700 flex gap-2 items-center tracking-tight"><ShieldCheck size={24} className="text-blue-500"/> TATA USAHA</h1><button className="md:hidden text-slate-400" onClick={() => setIsMobileMenuOpen(false)}><X size={20}/></button></div>
+        <div className="p-4 mx-3 mt-3 mb-1 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-black text-xl shrink-0 uppercase">{schoolName.charAt(0)}</div>
+          <div className="min-w-0">
+            <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-0.5">INSTANSI: {schoolId}</p>
+            <p className="text-xs font-bold truncate text-slate-800">{schoolName}</p>
+          </div>
         </div>
-        <div className="p-4 border-b border-slate-800 bg-gradient-to-r from-slate-900 to-black">
-          <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-1">PANEL ADMIN IT</p>
-          <p className="text-xs font-bold truncate text-white uppercase">{schoolName}</p>
-        </div>
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          <NavItem tab="guru" icon={Users} label="Manajemen Guru" badge={pendingTeachers.length} />
-          <NavItem tab="recap" icon={ClipboardList} label="Rekap Nilai Global" />
+        <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
+          <NavItem tab="guru" icon={Users} label="Data Guru Sekolah" badge={pendingTeachers.length} />
+          <NavItem tab="recap" icon={ClipboardList} label="Rekapitulasi Nilai" />
         </nav>
-        <div className="p-3"><button onClick={onLogout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-950/50 hover:bg-red-900 border border-red-900 text-red-500 hover:text-white rounded-xl text-xs font-bold transition-colors shadow-lg"><LogOut size={16}/> Keluar Akun</button></div>
+        <div className="p-4 border-t border-slate-100"><button onClick={logout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-bold text-sm transition-colors"><LogOut size={16}/> Logout</button></div>
       </aside>
-      
-      <main className="flex-1 flex flex-col h-screen overflow-hidden bg-[#0a0f1c]">
-        <header className="bg-slate-900 border-b border-slate-800 p-3 lg:p-4 flex justify-between items-center shadow-lg z-10 print:hidden">
+
+      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+        <header className="bg-white border-b border-slate-200 p-4 flex justify-between items-center z-10 print:hidden shadow-sm">
           <div className="flex items-center gap-3">
-            <button className="md:hidden p-1.5 bg-slate-800 rounded-lg text-amber-500" onClick={() => setIsMobileMenuOpen(true)}><Menu size={20}/></button>
-            <div className="hidden md:block">
-              <h2 className="text-xs font-black text-white leading-tight tracking-widest uppercase">{schoolName}</h2>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">SISTEM TERISOLASI</p>
-            </div>
+            <button className="md:hidden p-1.5 bg-slate-100 rounded-lg text-blue-600" onClick={() => setIsMobileMenuOpen(true)}><Menu size={20}/></button>
+            <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Dashboard Operator</h2>
+          </div>
+          <div className="bg-blue-50 px-3 py-1.5 rounded-full border border-blue-100 flex items-center gap-1.5">
+             <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+             <span className="text-[10px] font-black text-blue-700 uppercase">{schoolId} Aktif</span>
           </div>
         </header>
-        
+
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
           
-          {/* TAB MANAJEMEN GURU */}
+          {/* TAB MANAJEMEN GURU KHUSUS SEKOLAH INI */}
           {activeTab === 'guru' && (
-            <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
-              <h3 className="text-xl font-black text-white flex items-center gap-2"><Users className="text-amber-500" size={20}/> Personalia Instansi</h3>
-              
+            <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
+                 <div>
+                    <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><Users className="text-blue-600"/> Personalia Guru Sekolah</h3>
+                    <p className="text-sm text-slate-500 mt-1">Kelola staf pengajar yang terdaftar di instansi Anda.</p>
+                 </div>
+                 <button onClick={() => { setGuruForm({name:'', email:'', password:''}); setShowAddGuruModal(true); }} className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 shadow-md active:scale-95 transition-all"><Plus size={18}/> Tambah Guru Baru</button>
+              </div>
+
               {pendingTeachers.length > 0 && (
-                <div className="bg-orange-950/30 rounded-2xl border border-orange-900/50 overflow-hidden shadow-sm p-4 space-y-3">
-                  <div className="font-black text-orange-500 text-sm flex items-center gap-2 border-b border-orange-900/50 pb-2"><ShieldAlert size={18}/> Menunggu Persetujuan ({pendingTeachers.length})</div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-orange-50 rounded-2xl border border-orange-200 overflow-hidden shadow-sm p-5 space-y-4">
+                  <div className="font-black text-orange-700 flex items-center gap-2"><Users size={20}/> Menunggu Persetujuan ({pendingTeachers.length})</div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {pendingTeachers.map(t => (
-                      <div key={t.id} className="bg-slate-950 p-4 rounded-xl border border-orange-900/30 flex flex-col justify-between gap-3 shadow-sm">
-                        <div><p className="font-black text-white text-sm">{t?.name || 'Tanpa Nama'}</p><p className="font-medium text-slate-400 text-xs mt-0.5">{t?.email}</p></div>
-                        <div className="flex gap-2 w-full border-t border-slate-800 pt-3">
-                          <button onClick={() => approveTeacher(t.id)} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg text-xs font-bold active:scale-95"><CheckCircle size={16} className="mx-auto"/></button>
-                          <button onClick={() => rejectTeacher(t.id)} className="flex-1 bg-slate-900 border border-red-900/50 text-red-500 hover:bg-red-950 py-2 rounded-lg text-xs font-bold active:scale-95"><XCircle size={16} className="mx-auto"/></button>
+                      <div key={t.id} className="bg-white p-4 rounded-xl border border-orange-200 flex flex-col justify-between gap-3 shadow-sm">
+                        <div><p className="font-black text-slate-800 text-sm">{t?.name || 'Tanpa Nama'}</p><p className="font-medium text-slate-500 text-xs mt-0.5">{t?.email || '-'}</p></div>
+                        <div className="flex gap-2 w-full border-t border-slate-100 pt-3">
+                          <button onClick={() => approveTeacher(t.id)} className="flex-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 py-2 rounded-lg text-xs font-bold transition-all flex justify-center"><CheckCircle size={16}/></button>
+                          <button onClick={() => rejectTeacher(t.id)} className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-2 rounded-lg text-xs font-bold transition-all flex justify-center"><XCircle size={16}/></button>
                         </div>
                       </div>
                     ))}
@@ -209,133 +212,159 @@ export default function SchoolAdminDashboard({ onLogout }) {
                 </div>
               )}
 
-              <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-x-auto shadow-lg">
-                <table className="w-full text-left text-sm min-w-[700px] whitespace-nowrap">
-                  <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
-                    <tr>
-                      <th className="py-4 px-6 w-16 text-center font-bold uppercase text-xs">No</th>
-                      <th className="py-4 px-6 font-bold uppercase text-xs">Nama Guru</th>
-                      <th className="py-4 px-6 font-bold uppercase text-xs">Email Akun</th>
-                      <th className="py-4 px-6 text-center font-bold uppercase text-xs w-32">Kontrol</th>
-                    </tr>
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-x-auto shadow-sm">
+                <table className="w-full text-left text-sm whitespace-nowrap">
+                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                    <tr><th className="py-4 px-6 w-16 text-center">No</th><th className="py-4 px-6 font-bold uppercase tracking-wider text-xs">Nama Guru</th><th className="py-4 px-6 font-bold uppercase tracking-wider text-xs">Email Login</th><th className="py-4 px-6 text-center font-bold uppercase tracking-wider text-xs w-48">Aksi</th></tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/50">
+                  <tbody className="divide-y divide-slate-100">
                     {activeTeachers.map((t, i) => (
-                      <tr key={t.id} className="hover:bg-slate-800/40">
+                      <tr key={t.id} className="hover:bg-slate-50">
                         <td className="py-4 px-6 text-center font-bold text-slate-500">{i + 1}</td>
-                        <td className="py-4 px-6 font-black text-white">{t?.name}</td>
-                        <td className="py-4 px-6 text-slate-400 text-sm">{t?.email}</td>
-                        <td className="py-4 px-6 text-center">
-                          <button onClick={() => deleteTeacher(t.id)} title="Hapus Guru" className="text-slate-400 hover:text-red-500 bg-slate-800/50 hover:bg-red-950/30 p-2 rounded-lg transition-all active:scale-95 border border-slate-700/50"><Trash2 size={16}/></button>
+                        <td className="py-4 px-6 font-black text-slate-800">{t?.name}</td>
+                        <td className="py-4 px-6 text-slate-500 font-medium">{t?.email}</td>
+                        <td className="py-4 px-6">
+                          <div className="flex justify-center gap-2">
+                            <button onClick={() => { setEditGuruId(t.id); setGuruForm({name: t.name, email: t.email}); setShowEditGuruModal(true); }} className="text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 border border-slate-200 p-2 rounded-lg transition-colors"><UserCog size={16}/></button>
+                            <button onClick={() => handleResetPassword(t.email)} className="text-slate-400 hover:text-amber-500 bg-slate-50 hover:bg-amber-50 border border-slate-200 p-2 rounded-lg transition-colors"><KeyRound size={16}/></button>
+                            <button onClick={() => deleteTeacher(t.id)} className="text-slate-400 hover:text-red-600 bg-slate-50 hover:bg-red-50 border border-slate-200 p-2 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                          </div>
                         </td>
                       </tr>
                     ))}
-                    {activeTeachers.length === 0 && <tr><td colSpan="4" className="text-center p-8 text-slate-500">Belum ada Guru yang disetujui.</td></tr>}
+                    {activeTeachers.length === 0 && <tr><td colSpan="4" className="p-8 text-center text-slate-400 font-medium">Belum ada guru yang terdaftar di sekolah ini.</td></tr>}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* TAB REKAP NILAI SEKOLAH */}
+          {/* TAB REKAP NILAI SEKOLAH INI */}
           {activeTab === 'recap' && (
-            <div className="space-y-4 max-w-7xl mx-auto print:max-w-full animate-in fade-in duration-300">
-              <div className="bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-800 print:hidden">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-800 pb-3 mb-4">
-                  <h3 className="text-lg font-black text-white flex items-center gap-2"><ClipboardList className="text-amber-500" size={18}/> Rekapitulasi Nilai Instansi</h3>
-                  <div className="flex gap-2 w-full md:w-auto">
-                    {selectedRecaps.length > 0 && (
-                      <button onClick={handleBatchDeleteRecaps} className="flex-1 md:flex-none bg-red-600 hover:bg-red-500 text-white px-3 py-2 rounded-lg font-bold flex items-center justify-center gap-1.5 active:scale-95 shadow-sm text-xs"><Trash2 size={14}/> Hapus {selectedRecaps.length} Terpilih</button>
-                    )}
-                    <button onClick={downloadMasterRecap} className="bg-emerald-900/40 hover:bg-emerald-600 border border-emerald-800 text-emerald-400 hover:text-white px-3 py-2 rounded-lg font-bold flex items-center gap-1.5 active:scale-95 text-xs"><Download size={14}/> Download Excel</button>
-                    <button onClick={resetRekapNilai} className="bg-slate-950 border border-slate-800 text-red-500 hover:bg-red-950 px-3 py-2 rounded-lg font-bold flex items-center gap-1.5 active:scale-95 text-xs"><AlertTriangle size={14}/> Kosongkan</button>
-                  </div>
+            <div className="space-y-5 max-w-7xl mx-auto print:max-w-full animate-in fade-in duration-300">
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 print:hidden space-y-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
+                  <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-blue-600"/> Laporan Nilai Sekolah</h3>
+                  <button onClick={downloadRecap} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 border border-emerald-200 transition-colors"><Download size={16}/> Export Excel</button>
                 </div>
                 
-                {/* 3 FILTER SEKOLAH */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-                  <select value={adminRecapGuru} onChange={e => {setAdminRecapGuru(e.target.value); setAdminRecapMapel(''); setAdminRecapKelas('');}} className="w-full p-2.5 text-xs border border-slate-700 rounded-xl bg-slate-950 font-bold text-white outline-none"><option value="">-- Semua Guru --</option>{availableRecapGurus.map(g => <option key={g}>{g}</option>)}</select>
-                  <select value={adminRecapMapel} onChange={e => {setAdminRecapMapel(e.target.value); setAdminRecapKelas('');}} className="w-full p-2.5 text-xs border border-slate-700 rounded-xl bg-slate-950 font-bold text-white outline-none"><option value="">-- Semua Mapel --</option>{availableRecapMapels.map(m => <option key={m}>{m}</option>)}</select>
-                  <select value={adminRecapKelas} onChange={e => setAdminRecapKelas(e.target.value)} className="w-full p-2.5 text-xs border border-slate-700 rounded-xl bg-slate-950 font-bold text-white outline-none"><option value="">-- Semua Kelas --</option>{availableRecapKelasList.map(k => <option key={k}>{k}</option>)}</select>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <select value={recapGuru} onChange={e => {setRecapGuru(e.target.value); setRecapMapel(''); setRecapKelas('');}} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none text-sm font-bold text-slate-700"><option value="">-- Semua Guru --</option>{availableGurus.map(g => <option key={g}>{g}</option>)}</select>
+                  <select value={recapMapel} onChange={e => {setRecapMapel(e.target.value); setRecapKelas('');}} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none text-sm font-bold text-slate-700"><option value="">-- Semua Mapel --</option>{availableMapels.map(m => <option key={m}>{m}</option>)}</select>
+                  <select value={recapKelas} onChange={e => setRecapKelas(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none text-sm font-bold text-slate-700"><option value="">-- Semua Kelas --</option>{availableKelas.map(k => <option key={k}>{k}</option>)}</select>
                 </div>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <button onClick={() => { setAdminPrintMode('rekap'); setTimeout(() => window.print(), 300); }} className="w-full bg-blue-900/40 hover:bg-blue-600 border border-blue-800 text-blue-400 hover:text-white py-2.5 rounded-xl font-black flex items-center justify-center gap-2 text-xs"><BarChart size={14}/> Cetak Daftar Nilai</button>
-                  <button onClick={() => { setAdminPrintMode('berita_acara'); setTimeout(() => window.print(), 300); }} className="w-full bg-purple-900/40 hover:bg-purple-600 border border-purple-800 text-purple-400 hover:text-white py-2.5 rounded-xl font-black flex items-center justify-center gap-2 text-xs"><FileText size={14}/> Berita Acara</button>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3">
+                  <button onClick={() => { setPrintMode('rekap'); setTimeout(() => window.print(), 300); }} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-sm"><BarChart size={16}/> Cetak Nilai</button>
+                  <button onClick={() => { setPrintMode('berita_acara'); setTimeout(() => window.print(), 300); }} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-sm"><FileText size={16}/> Berita Acara</button>
+                  <button onClick={() => { setPrintMode('daftar_hadir'); setTimeout(() => window.print(), 300); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-sm"><Users size={16}/> Daftar Hadir</button>
                 </div>
               </div>
-              
-              {/* === TAMPILAN KERTAS PRINT (REKAP NILAI) === */}
-              <div className={`${adminPrintMode === 'rekap' ? 'hidden print:block' : 'hidden'}`}>
+
+              {/* TAMPILAN PRINT BERDASARKAN MODE */}
+              <div className={`${printMode === 'rekap' ? 'hidden print:block' : 'hidden'}`}>
                 <OfficialHeader />
-                <h3 className="text-center font-black text-lg mb-6 underline">DAFTAR NILAI UJIAN SISWA</h3>
-                <p className="mb-4 text-sm font-bold">Guru Mapel: {adminRecapGuru || 'Semua'} <br/> Mata Pelajaran: {adminRecapMapel || 'Semua'} <br/> Kelas: {adminRecapKelas || 'Semua'}</p>
+                <h3 className="text-center font-black text-lg mb-6 underline">DAFTAR NILAI UJIAN</h3>
+                <p className="mb-4 text-sm font-bold">Instansi: {schoolId.toUpperCase()} <br/> Guru Mapel: {recapGuru || 'Semua'} | Mapel: {recapMapel || 'Semua'} | Kelas: {recapKelas || 'Semua'}</p>
                 <table className="w-full text-left text-sm">
-                  <thead><tr><th className="py-2 px-3 w-12 text-center">No</th><th className="py-2 px-3">Nama Lengkap Siswa</th><th className="py-2 px-3 text-center">Kelas</th><th className="py-2 px-3 text-center">Skor Akhir</th></tr></thead>
+                  <thead><tr><th className="py-2 px-3 text-center">No</th><th className="py-2 px-3">Nama Siswa</th><th className="py-2 px-3 text-center">Kelas</th><th className="py-2 px-3">Mapel</th><th className="py-2 px-3 text-center">Nilai Akhir</th></tr></thead>
                   <tbody>
-                    {filteredRecap.map((s, i) => (
-                      <tr key={s?.id || i}><td className="py-2 px-3 text-center">{i+1}</td><td className="py-2 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td><td className="py-2 px-3 text-center">{s?.class}</td><td className="py-2 px-3 text-center font-black">{s?.score || 0}</td></tr>
+                    {filteredLeaderboard.map((s, i) => (
+                      <tr key={s.id}><td className="py-2 px-3 text-center">{i+1}</td><td className="py-2 px-3 font-bold uppercase">{s.name}</td><td className="py-2 px-3 text-center">{s.class}-{s.subKelas}</td><td className="py-2 px-3">{s.mapel}</td><td className="py-2 px-3 text-center font-black">{s.score}</td></tr>
                     ))}
                   </tbody>
                 </table>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '40px', textAlign: 'center' }}>
-                  <div style={{ width: '250px' }}><p>Kepala Sekolah,</p><br/><br/><br/><p style={{ fontWeight: 'bold', textDecoration: 'underline', textTransform: 'uppercase' }}>_________________________</p></div>
-                </div>
               </div>
 
-              {/* === TAMPILAN KERTAS PRINT (BERITA ACARA) === */}
-              <div className={`${adminPrintMode === 'berita_acara' ? 'hidden print:block' : 'hidden'}`}>
+              <div className={`${printMode === 'berita_acara' ? 'hidden print:block' : 'hidden'}`}>
                 <OfficialHeader />
-                <h3 className="text-center font-black text-lg mb-8 underline tracking-wide">BERITA ACARA PELAKSANAAN UJIAN CBT</h3>
+                <h3 className="text-center font-black text-lg mb-8 underline tracking-wide">BERITA ACARA UJIAN (CBT)</h3>
                 <div className="text-justify leading-loose font-medium text-sm">
-                  <p>Pada hari ini _________ tanggal ____ bulan ________________ tahun 20___, telah diselenggarakan Ujian Berbasis Komputer (CBT) untuk:</p>
                   <table className="w-full my-4 border-none !border-0">
                     <tbody className="border-none">
-                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Guru Mapel</td><td className="border-none !p-0">: {adminRecapGuru || '_________________________'}</td></tr>
-                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Mata Pelajaran</td><td className="border-none !p-0">: {adminRecapMapel || '_________________________'}</td></tr>
-                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Kelas</td><td className="border-none !p-0">: {adminRecapKelas || '____'}</td></tr>
-                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Jumlah Peserta</td><td className="border-none !p-0">: {filteredRecap.length} Orang</td></tr>
+                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Guru Mapel</td><td className="border-none !p-0">: {recapGuru || '_________________________'}</td></tr>
+                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Mata Pelajaran</td><td className="border-none !p-0">: {recapMapel || '_________________________'}</td></tr>
+                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Kelas Terjadwal</td><td className="border-none !p-0">: {recapKelas || '____'}</td></tr>
+                      <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Siswa Ujian / Hadir</td><td className="border-none !p-0">: {filteredLeaderboard.length} Orang / ______ Orang</td></tr>
                     </tbody>
                   </table>
-                  <p className="mt-4">Catatan selama pelaksanaan ujian:</p>
-                  <div className="w-full h-24 border border-black mt-2 mb-8"></div>
+                  <div className="w-full h-24 border border-black mt-6 mb-8"></div>
+                </div>
+                <div className="flex justify-between mt-12 text-center">
+                  <div className="w-64"><p>Guru Mata Pelajaran,</p><br/><br/><br/><p className="font-bold uppercase border-b border-black pb-1">_________________________</p></div>
+                  <div className="w-64"><p>Kepala / Admin Tata Usaha,</p><br/><br/><br/><p className="font-bold uppercase border-b border-black pb-1">{schoolName}</p></div>
                 </div>
               </div>
 
-              {/* === TAMPILAN UI TABEL NILAI (SEBELUM DI PRINT) === */}
-              <div className="print:hidden">
-                <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto shadow-sm">
-                  <table className="w-full text-left text-xs min-w-[700px] whitespace-nowrap">
-                    <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
-                      <tr>
-                        <th className="py-2.5 px-3 w-10 text-center">
-                          <input type="checkbox" className="accent-amber-500 w-4 h-4 cursor-pointer rounded" onChange={handleSelectAllRecaps} checked={selectedRecaps.length === filteredRecap.length && filteredRecap.length > 0} />
-                        </th>
-                        <th className="py-2.5 px-3 font-bold uppercase">Identitas Siswa</th>
-                        <th className="py-2.5 px-3 font-bold uppercase text-center">Kelas</th>
-                        <th className="py-2.5 px-3 font-bold uppercase">Mapel & Guru</th>
-                        <th className="py-2.5 px-3 font-bold uppercase text-center">Skor Akhir</th>
+              <div className={`${printMode === 'daftar_hadir' ? 'hidden print:block' : 'hidden'}`}>
+                <OfficialHeader />
+                <h3 className="text-center font-black text-lg mb-6 underline">DAFTAR HADIR UJIAN</h3>
+                <p className="mb-4 text-sm font-bold">Mapel: {recapMapel || '___________'} | Kelas: {recapKelas || '____'}</p>
+                <table className="w-full text-left text-sm">
+                  <thead><tr><th className="py-3 px-3 text-center w-12">No</th><th className="py-3 px-3">Nama Lengkap</th><th className="py-3 px-3 text-center w-24">Kelas</th><th className="py-3 px-3 w-48 text-center">TTD</th></tr></thead>
+                  <tbody>
+                    {filteredLeaderboard.map((s, i) => (
+                      <tr key={s.id}><td className="py-3 px-3 text-center">{i+1}</td><td className="py-3 px-3 font-bold uppercase">{s.name}</td><td className="py-3 px-3 text-center">{s.class}-{s.subKelas}</td><td className="py-3 px-3 text-slate-400 text-xs">{i+1}.</td></tr>
+                    ))}
+                    {[...Array(Math.max(0, 15 - filteredLeaderboard.length))].map((_, i) => (<tr key={`e-${i}`}><td className="py-4"></td><td></td><td></td><td></td></tr>))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* UI TABEL REKAP BROWSER */}
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-x-auto shadow-sm print:hidden">
+                <table className="w-full text-left text-sm whitespace-nowrap">
+                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                    <tr><th className="py-4 px-4 text-center">No</th><th className="py-4 px-4 font-bold uppercase tracking-wider text-xs">Siswa</th><th className="py-4 px-4 text-center font-bold uppercase tracking-wider text-xs">Kelas</th><th className="py-4 px-4 font-bold uppercase tracking-wider text-xs">Mapel & Guru</th><th className="py-4 px-4 text-center font-bold uppercase tracking-wider text-xs">Skor</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredLeaderboard.map((s, i) => (
+                      <tr key={s.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4 text-center font-bold text-slate-500">{i+1}</td>
+                        <td className="py-3 px-4"><p className="font-black text-slate-800">{s.name}</p></td>
+                        <td className="py-3 px-4 text-center font-bold text-slate-600">{s.class}-{s.subKelas}</td>
+                        <td className="py-3 px-4"><p className="font-bold text-blue-600">{s.mapel}</p><p className="text-[10px] text-slate-500">{s.teacherEmail}</p></td>
+                        <td className="py-3 px-4 text-center"><span className="text-base font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100">{s.score}</span></td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/50">
-                      {filteredRecap.map((s) => (
-                        <tr key={s.id} className="hover:bg-slate-800/40">
-                          <td className="py-2.5 px-3 text-center"><input type="checkbox" className="accent-amber-500 w-4 h-4 cursor-pointer rounded" checked={selectedRecaps.includes(s.id)} onChange={() => toggleSelectRecap(s.id)} /></td>
-                          <td className="py-2.5 px-3 font-black text-white text-sm truncate max-w-[250px]">{s.name}</td>
-                          <td className="py-2.5 px-3 text-center font-bold text-slate-300">{s.class}</td>
-                          <td className="py-2.5 px-3"><p className="font-bold text-amber-500">{s.mapel}</p><p className="text-[9px] text-slate-500 truncate max-w-[200px]">{s.teacherEmail}</p></td>
-                          <td className="py-2.5 px-3 text-center"><span className="text-lg font-black text-white bg-slate-950 px-2 py-0.5 rounded border border-slate-700 shadow-inner">{s.score}</span></td>
-                        </tr>
-                      ))}
-                      {filteredRecap.length === 0 && <tr><td colSpan="5" className="text-center p-8 text-slate-500">Data nilai tidak ditemukan.</td></tr>}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                    {filteredLeaderboard.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-400">Tidak ada rekap nilai untuk filter ini.</td></tr>}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
+
         </div>
       </main>
+
+      {/* MODAL TAMBAH GURU */}
+      {showAddGuruModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[120] print:hidden">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <h2 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><Plus className="text-blue-600"/> Daftarkan Guru Baru</h2>
+            <form onSubmit={handleAddGuru} className="space-y-4">
+              <div><label className="text-xs font-bold text-slate-500 mb-1 block">Nama Lengkap & Gelar</label><input required value={guruForm.name} onChange={e => setGuruForm({...guruForm, name: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="Bpk. Budi S.Pd" /></div>
+              <div><label className="text-xs font-bold text-slate-500 mb-1 block">Email Akun (Login)</label><input type="email" required value={guruForm.email} onChange={e => setGuruForm({...guruForm, email: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="budi@guru.com" /></div>
+              <div><label className="text-xs font-bold text-slate-500 mb-1 block">Password Sementara</label><input type="password" required value={guruForm.password} onChange={e => setGuruForm({...guruForm, password: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="Minimal 6 Karakter" /></div>
+              <div className="flex gap-2 pt-2"><button type="button" onClick={() => setShowAddGuruModal(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Batal</button><button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black transition-colors">Buat Akun Guru</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT GURU */}
+      {showEditGuruModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[120] print:hidden">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <h2 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><UserCog className="text-blue-600"/> Edit Nama Guru</h2>
+            <form onSubmit={handleUpdateGuru} className="space-y-4">
+              <div><label className="text-xs font-bold text-slate-500 mb-1 block">Nama Lengkap & Gelar</label><input required value={guruForm.name} onChange={e => setGuruForm({...guruForm, name: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" /></div>
+              <div><label className="text-xs font-bold text-slate-500 mb-1 block">Email Akun (Info Saja)</label><input disabled value={guruForm.email} className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-500" /></div>
+              <div className="flex gap-2 pt-2"><button type="button" onClick={() => setShowEditGuruModal(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Batal</button><button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black transition-colors">Simpan Revisi</button></div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,284 +2,313 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { ref, onValue, set, remove, update } from 'firebase/database';
-import { useAuth } from '../../contexts/AuthContext';
-import { Crown, Activity, Building2, CreditCard, LogOut, Menu, X, Plus, Zap, ShieldAlert, CheckCircle, Trash2, Edit, Server, Globe } from 'lucide-react';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import { Building2, CreditCard, Users, LogOut, Plus, Trash2, Database, Menu, X, Landmark, KeyRound, Activity, User, Phone, MessageCircle } from 'lucide-react';
 
-const APP_VERSION = "3.0.0 SaaS";
-
-export default function MasterDashboard() {
-  const { currentUser, userData } = useAuth();
-  const [activeTab, setActiveTab] = useState('radar');
+export default function MasterDashboard({ onLogout }) {
+  const [activeTab, setActiveTab] = useState('clients');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [clients, setClients] = useState([]);
+  const [clientAdmins, setClientAdmins] = useState([]);
   
-  // State Multi-Tenant (Klien Sekolah)
-  const [tenants, setTenants] = useState([]);
-  const [showAddTenant, setShowAddTenant] = useState(false);
-  const [tenantForm, setTenantForm] = useState({ id: '', name: '', plan: 'Pro', status: 'active' });
+  const [showAddClientModal, setShowAddClientModal] = useState(false);
+  // Tambahan state picName dan waNumber
+  const [clientForm, setClientForm] = useState({ id: '', name: '', plan: 'Basic', expiryDate: '', picName: '', waNumber: '' });
 
-  // Tarik Data Tenant dari Master Control
+  const [showAddAdminModal, setShowAddAdminModal] = useState(false);
+  const [adminForm, setAdminForm] = useState({ email: '', password: '', name: '', schoolId: '' });
+
   useEffect(() => {
-    const tenantsRef = ref(db, 'master_control/tenants');
-    const unsubscribe = onValue(tenantsRef, (snap) => {
+    const clientsRef = ref(db, 'clients');
+    const unsubClients = onValue(clientsRef, (snap) => {
       if (snap.exists()) {
-        const data = snap.val();
-        setTenants(Object.keys(data).map(key => ({ id: key, ...data[key] })));
+        setClients(Object.keys(snap.val()).map(key => ({ id: key, ...snap.val()[key] })));
       } else {
-        setTenants([]);
+        setClients([]);
       }
     });
-    return () => unsubscribe();
+
+    const usersRef = ref(db, 'users');
+    const unsubUsers = onValue(usersRef, (snap) => {
+      if (snap.exists()) {
+        const allUsers = Object.keys(snap.val()).map(key => ({ uid: key, ...snap.val()[key] }));
+        setClientAdmins(allUsers.filter(u => u.role === 'admin_sekolah'));
+      } else {
+        setClientAdmins([]);
+      }
+    });
+
+    return () => { unsubClients(); unsubUsers(); };
   }, []);
 
-  const stats = {
-    totalTenants: tenants.length,
-    activeTenants: tenants.filter(t => t.status === 'active').length,
-    suspended: tenants.filter(t => t.status === 'suspended').length,
+  // --- MANAJEMEN KLIEN (SEKOLAH) ---
+  const handleSaveClient = (e) => {
+    e.preventDefault();
+    const clientId = clientForm.id.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    
+    set(ref(db, `clients/${clientId}`), {
+      name: clientForm.name,
+      plan: clientForm.plan,
+      expiryDate: clientForm.expiryDate,
+      picName: clientForm.picName, // Simpan Nama PIC
+      waNumber: clientForm.waNumber, // Simpan Nomor WA
+      status: 'active',
+      createdAt: Date.now()
+    }).then(() => {
+      alert("Klien sekolah berhasil didaftarkan!");
+      setShowAddClientModal(false);
+      setClientForm({ id: '', name: '', plan: 'Basic', expiryDate: '', picName: '', waNumber: '' });
+    }).catch(err => alert("Gagal: " + err.message));
   };
 
-  // ==========================================
-  // FUNGSI KENDALI SAAS (MASTER)
-  // ==========================================
-  const handleAddTenant = async (e) => {
-    e.preventDefault();
-    const cleanId = tenantForm.id.toLowerCase().replace(/[^a-z0-9-]/g, ''); // Format ID jadi darma-pertiwi
-    
-    if (tenants.find(t => t.id === cleanId)) {
-      return alert("ID Sekolah ini sudah terdaftar di sistem!");
+  const toggleClientStatus = (id, currentStatus) => {
+    const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+    if(window.confirm(`Yakin ingin ubah status klien ini menjadi ${newStatus.toUpperCase()}?`)) {
+      update(ref(db, `clients/${id}`), { status: newStatus });
     }
+  };
 
+  const deleteClient = (id) => {
+    if(window.confirm("PERINGATAN! Hapus klien ini secara permanen? Data tenant mereka akan kehilangan referensi billing.")) {
+      remove(ref(db, `clients/${id}`));
+    }
+  };
+
+  // --- MANAJEMEN AKUN ADMIN SEKOLAH ---
+  const handleCreateClientAdmin = async (e) => {
+    e.preventDefault();
+    if (!adminForm.schoolId) return alert("Pilih sekolah untuk admin ini!");
+    
     try {
-      // 1. Daftarkan di Master Control
-      await set(ref(db, `master_control/tenants/${cleanId}`), {
-        name: tenantForm.name,
-        plan: tenantForm.plan,
-        status: tenantForm.status,
+      const auth = getAuth();
+      const userCred = await createUserWithEmailAndPassword(auth, adminForm.email, adminForm.password);
+      
+      await set(ref(db, `users/${userCred.user.uid}`), {
+        name: adminForm.name,
+        email: adminForm.email,
+        role: 'admin_sekolah',
+        schoolId: adminForm.schoolId,
+        status: 'active',
         createdAt: Date.now()
       });
 
-      // 2. Buatkan "Kamar" Profil Khusus Tenant
-      await set(ref(db, `tenants/${cleanId}/profile`), {
-        schoolName: tenantForm.name,
-        registeredAt: Date.now(),
-        subscription: tenantForm.plan
-      });
-
-      alert(`✅ Klien Yayasan "${tenantForm.name}" berhasil ditambahkan ke Server!`);
-      setShowAddTenant(false);
-      setTenantForm({ id: '', name: '', plan: 'Pro', status: 'active' });
+      alert("Akun Admin Sekolah berhasil dibuat!");
+      setShowAddAdminModal(false);
+      setAdminForm({ email: '', password: '', name: '', schoolId: '' });
     } catch (err) {
-      alert("Gagal menambahkan Tenant: " + err.message);
+      alert("Gagal membuat admin: " + err.message);
     }
   };
 
-  const toggleTenantStatus = (id, currentStatus) => {
-    const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
-    const msg = newStatus === 'suspended' 
-      ? `KUNCI PAKSA akses untuk yayasan ini? Seluruh guru dan siswa tidak akan bisa login.`
-      : `BUKA KEMBALI akses untuk yayasan ini?`;
-      
-    if (window.confirm(msg)) {
-      update(ref(db, `master_control/tenants/${id}`), { status: newStatus });
-    }
+  const deleteAdmin = (uid) => {
+    if(window.confirm("Hapus akses admin sekolah ini?")) remove(ref(db, `users/${uid}`));
   };
 
-  const deleteTenant = (id) => {
-    const konfirmasi = window.prompt(`🚨 HANCURKAN DATA YAYASAN!\nIni akan menghapus profil yayasan dari radar master.\n\nKetik 'HAPUS' untuk melanjutkan:`);
-    if (konfirmasi === 'HAPUS') {
-      remove(ref(db, `master_control/tenants/${id}`));
-      // Catatan CTO: Di sistem riil, pastikan juga menghapus folder tenants/{id} jika ingin bersih total
-      alert("Yayasan berhasil dihapus dari sistem Master.");
+  // Format link WhatsApp otomatis
+  const generateWALink = (phone) => {
+    if (!phone) return '#';
+    let cleanPhone = phone.replace(/[^0-9]/g, '');
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = '62' + cleanPhone.substring(1);
     }
+    return `https://wa.me/${cleanPhone}`;
   };
 
-  const triggerGlobalUpdate = () => {
-    if(window.confirm(`🚀 RILIS UPDATE GLOBAL V3\nApakah Anda yakin ingin menyalakan saklar Global Sync?\nIni akan memaksa SELURUH perangkat klien memuat ulang sistem.`)) {
-      set(ref(db, 'master_control/global_settings/activeVersion'), APP_VERSION)
-        .then(() => alert("⚡ BUM! Sinyal Update Global Terkirim!"))
-        .catch(err => alert("Gagal mengirim sinyal."));
-    }
-  };
-
-  // Komponen Sidebar
   const NavItem = ({ tab, icon: Icon, label }) => (
-    <button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${activeTab === tab ? 'bg-amber-500 text-black font-black shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:bg-slate-900 hover:text-white font-bold'}`}>
+    <button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-3.5 rounded-xl transition-all ${activeTab === tab ? 'bg-amber-500 text-black font-black shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white font-bold'}`}>
       <Icon size={18}/> <span className="text-sm">{label}</span>
     </button>
   );
 
   return (
-    <div className="flex h-screen bg-slate-950 font-sans text-slate-200 overflow-hidden">
-      
-      {/* MOBILE OVERLAY */}
+    <div className="flex h-screen bg-slate-950 overflow-hidden font-sans text-slate-200">
       {isMobileMenuOpen && <div className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />}
       
-      {/* SIDEBAR MASTER ADMIN */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-black border-r border-slate-800 flex flex-col transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 shadow-2xl`}>
-        <div className="p-4 border-b border-slate-800 flex justify-between items-center">
-          <h1 className="text-xl font-black text-white flex gap-2 items-center tracking-widest">
-            <Crown className="text-amber-500" size={24}/> SAAS MASTER
-          </h1>
-          <button className="md:hidden text-slate-500" onClick={() => setIsMobileMenuOpen(false)}><X size={20}/></button>
+        <div className="p-5 border-b border-slate-800 flex justify-between items-center"><h1 className="text-xl font-black text-white flex gap-2 items-center tracking-widest"><Building2 className="text-amber-500" size={24}/> SAAS ROOT</h1><button className="md:hidden text-slate-500" onClick={() => setIsMobileMenuOpen(false)}><X size={20}/></button></div>
+        <div className="p-4 border-b border-slate-800 bg-slate-900">
+          <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-1">FOUNDER / CS PANEL</p>
+          <p className="text-xs font-bold truncate text-white uppercase">Sistem Billing & Klien</p>
         </div>
-        <div className="p-4 border-b border-slate-800 bg-gradient-to-r from-slate-900 to-black">
-          <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-1">ENGINE {APP_VERSION}</p>
-          <p className="text-xs font-bold text-white uppercase truncate">{userData?.name || 'Super Admin Pusat'}</p>
-        </div>
-        <nav className="flex-1 p-3 space-y-2 overflow-y-auto mt-2">
-          <NavItem tab="radar" icon={Activity} label="Radar Server" />
-          <NavItem tab="tenants" icon={Building2} label="Manajemen Klien (Tenant)" />
-          <NavItem tab="billing" icon={CreditCard} label="Tagihan & Langganan" />
+        <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
+          <NavItem tab="clients" icon={Landmark} label="Database Sekolah" />
+          <NavItem tab="admins" icon={Users} label="Akun Admin Klien" />
+          <div className="my-3 border-t border-slate-800"></div>
+          <NavItem tab="billing" icon={CreditCard} label="Tagihan & Paket" />
+          <NavItem tab="database" icon={Database} label="System Log" />
         </nav>
-        <div className="p-3 border-t border-slate-800">
-           <button onClick={triggerGlobalUpdate} className="w-full flex items-center justify-center gap-2 p-3 bg-amber-500 hover:bg-amber-400 text-black rounded-xl font-black text-xs shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all active:scale-95 uppercase tracking-tighter">
-              <Zap size={16}/> RILIS UPDATE CLIENT
-           </button>
-        </div>
+        <div className="p-4 border-t border-slate-800"><button onClick={onLogout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-950 hover:bg-red-900 text-red-500 hover:text-white rounded-xl text-xs font-bold transition-colors"><LogOut size={16}/> Keluar</button></div>
       </aside>
 
-      {/* AREA UTAMA */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-[#0a0f1c]">
-        {/* HEADER */}
-        <header className="bg-slate-900 border-b border-slate-800 p-3 lg:p-4 flex justify-between items-center shadow-lg z-10">
-          <div className="flex items-center gap-3">
-            <button className="md:hidden p-1.5 bg-slate-800 rounded-lg text-amber-500" onClick={() => setIsMobileMenuOpen(true)}><Menu size={20}/></button>
-            <div className="hidden md:flex items-center gap-3">
-               <div className="p-1.5 bg-amber-500/10 rounded-lg border border-amber-500/20"><Globe size={20} className="text-amber-500" /></div>
-               <div>
-                  <h2 className="text-xs font-black text-white leading-tight tracking-widest uppercase">JARINGAN MULTI-TENANT AKTIF</h2>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">Semua data sekolah terisolasi aman</p>
-               </div>
-            </div>
-            <h2 className="text-lg font-black text-white md:hidden tracking-wider">SAAS V3</h2>
-          </div>
-          <div className="flex items-center gap-2 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/30">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div><span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Sistem Online</span>
-          </div>
+        <header className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shadow-lg z-10">
+           <div className="flex items-center gap-3">
+             <button className="md:hidden text-amber-500" onClick={() => setIsMobileMenuOpen(true)}><Menu size={20}/></button>
+             <h2 className="text-lg font-black text-white tracking-widest uppercase">Master Control Center</h2>
+           </div>
         </header>
 
-        {/* KONTEN HALAMAN */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
           
-          {/* TAB RADAR SAAS */}
-          {activeTab === 'radar' && (
-            <div className="space-y-4 max-w-7xl mx-auto animate-in fade-in duration-300">
-              <h3 className="text-xl font-black text-white mb-4 flex items-center gap-2"><Activity className="text-amber-500" size={20}/> Status Infrastruktur</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 border-b-4 border-b-amber-500 shadow-lg relative overflow-hidden">
-                  <div className="absolute -right-4 -bottom-4 opacity-5"><Building2 size={80}/></div>
-                  <p className="text-slate-400 font-bold text-xs mb-1 uppercase tracking-widest">Klien Terdaftar</p>
-                  <p className="text-3xl font-black text-white">{stats.totalTenants}</p>
-                </div>
-                <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 border-b-4 border-b-emerald-500 shadow-lg relative overflow-hidden">
-                  <div className="absolute -right-4 -bottom-4 opacity-5"><CheckCircle size={80}/></div>
-                  <p className="text-slate-400 font-bold text-xs mb-1 uppercase tracking-widest">Klien Aktif</p>
-                  <p className="text-3xl font-black text-emerald-400">{stats.activeTenants}</p>
-                </div>
-                <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 border-b-4 border-b-blue-500 shadow-lg relative overflow-hidden">
-                  <div className="absolute -right-4 -bottom-4 opacity-5"><Server size={80}/></div>
-                  <p className="text-slate-400 font-bold text-xs mb-1 uppercase tracking-widest">Beban Server Node</p>
-                  <p className="text-3xl font-black text-blue-400">Normal</p>
-                </div>
+          {/* TAB KLIEN / SEKOLAH */}
+          {activeTab === 'clients' && (
+            <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
+                 <div>
+                    <h3 className="text-xl font-black text-white flex items-center gap-2"><Landmark className="text-amber-500"/> Database Klien (Sekolah)</h3>
+                    <p className="text-sm text-slate-500 mt-1">Kelola institusi yang berlangganan layanan CBT SaaS Anda.</p>
+                 </div>
+                 <button onClick={() => setShowAddClientModal(true)} className="bg-amber-500 hover:bg-amber-400 text-black px-5 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 active:scale-95 transition-all"><Plus size={18}/> Tambah Sekolah Baru</button>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {clients.map(client => (
+                  <div key={client.id} className={`p-5 rounded-2xl border shadow-lg flex flex-col justify-between gap-4 transition-all ${client.status === 'active' ? 'bg-slate-900 border-slate-800' : 'bg-slate-950 border-red-900/50 opacity-75'}`}>
+                     <div className="flex flex-col md:flex-row justify-between gap-4">
+                       <div className="flex-1">
+                         <div className="flex justify-between items-start mb-3">
+                            <h4 className="text-lg font-black text-white tracking-tight leading-tight">{client.name}</h4>
+                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider ${client.status === 'active' ? 'bg-emerald-950 text-emerald-500 border border-emerald-900/50' : 'bg-red-950 text-red-500 border border-red-900/50'}`}>
+                               {client.status}
+                            </span>
+                         </div>
+                         <div className="space-y-1.5 text-xs font-medium">
+                            <p className="text-slate-400">ID Tenant: <span className="text-amber-500 font-mono font-bold bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">{client.id}</span></p>
+                            <p className="text-slate-400">Paket Sistem: <span className="text-blue-400">{client.plan}</span></p>
+                            <p className="text-slate-400">Kadaluarsa: <span className="text-white">{client.expiryDate || 'Unlimited'}</span></p>
+                         </div>
+                       </div>
+                       
+                       {/* Kolom Info PIC & WhatsApp */}
+                       <div className="md:border-l border-t md:border-t-0 border-slate-800 md:pl-4 pt-3 md:pt-0 w-full md:w-48 shrink-0 flex flex-col justify-between">
+                          <div className="space-y-2 mb-3">
+                            <div>
+                               <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><User size={12}/> PIC Sekolah</p>
+                               <p className="text-xs font-bold text-white truncate">{client.picName || '-'}</p>
+                            </div>
+                            <div>
+                               <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><Phone size={12}/> WhatsApp</p>
+                               <p className="text-xs font-bold text-white truncate">{client.waNumber || '-'}</p>
+                            </div>
+                          </div>
+                          <a href={generateWALink(client.waNumber)} target="_blank" rel="noreferrer" className="w-full py-2 bg-emerald-950/40 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors flex justify-center items-center gap-1 border border-emerald-900/50">
+                             <MessageCircle size={14}/> Follow Up WA
+                          </a>
+                       </div>
+                     </div>
+
+                     <div className="grid grid-cols-2 gap-2 border-t border-slate-800 pt-3">
+                       <button onClick={() => toggleClientStatus(client.id, client.status)} className="py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-colors">
+                          {client.status === 'active' ? 'Suspend Klien' : 'Aktifkan Klien'}
+                       </button>
+                       <button onClick={() => deleteClient(client.id)} className="py-2 bg-red-950/30 hover:bg-red-900 text-red-500 rounded-lg text-xs font-bold transition-colors">Hapus Permanen</button>
+                     </div>
+                  </div>
+                ))}
+                {clients.length === 0 && <div className="col-span-full p-10 text-center border border-dashed border-slate-800 rounded-2xl text-slate-500">Belum ada sekolah yang didaftarkan.</div>}
               </div>
             </div>
           )}
 
-          {/* TAB MANAJEMEN KLIEN (TENANTS) */}
-          {activeTab === 'tenants' && (
-            <div className="space-y-4 max-w-7xl mx-auto animate-in fade-in duration-300">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">
-                <h3 className="text-xl font-black text-white flex items-center gap-2"><Building2 className="text-amber-500" size={20}/> Daftar Klien Yayasan</h3>
-                <button onClick={() => setShowAddTenant(true)} className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-black px-4 py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-[0_0_10px_rgba(245,158,11,0.3)] active:scale-95 transition-all uppercase tracking-wide">
-                  <Plus size={16}/> Tambah Sekolah
-                </button>
+          {/* TAB ADMIN KLIEN */}
+          {activeTab === 'admins' && (
+            <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
+                 <div>
+                    <h3 className="text-xl font-black text-white flex items-center gap-2"><Users className="text-amber-500"/> Manajemen Akses Tata Usaha</h3>
+                    <p className="text-sm text-slate-500 mt-1">Buatkan akun login khusus untuk operator/TU sekolah.</p>
+                 </div>
+                 <button onClick={() => setShowAddAdminModal(true)} className="bg-amber-500 hover:bg-amber-400 text-black px-5 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 active:scale-95 transition-all"><KeyRound size={18}/> Buat Akun TU</button>
               </div>
 
-              <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-x-auto shadow-lg">
-                <table className="w-full text-left text-sm min-w-[700px] whitespace-nowrap">
+              <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-x-auto">
+                <table className="w-full text-left text-sm whitespace-nowrap">
                   <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
-                    <tr>
-                      <th className="py-4 px-6 font-bold uppercase tracking-wider text-xs">ID Tenant / Endpoint</th>
-                      <th className="py-4 px-6 font-bold uppercase tracking-wider text-xs">Nama Institusi</th>
-                      <th className="py-4 px-6 font-bold uppercase tracking-wider text-xs text-center">Paket</th>
-                      <th className="py-4 px-6 font-bold uppercase tracking-wider text-xs text-center">Status</th>
-                      <th className="py-4 px-6 font-bold uppercase tracking-wider text-xs text-center">Kontrol</th>
-                    </tr>
+                    <tr><th className="p-4">Nama Admin TU</th><th className="p-4">Email Login</th><th className="p-4">Bertugas Di (ID Sekolah)</th><th className="p-4 text-center">Aksi</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/50">
-                    {tenants.map(t => (
-                      <tr key={t.id} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-4 px-6 font-mono font-bold text-amber-500 text-xs">{t.id}</td>
-                        <td className="py-4 px-6 font-black text-white">{t.name}</td>
-                        <td className="py-4 px-6 text-center">
-                          <span className="bg-blue-950/50 text-blue-400 border border-blue-900/50 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest">{t.plan}</span>
-                        </td>
-                        <td className="py-4 px-6 text-center">
-                          <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest border ${t.status === 'active' ? 'bg-emerald-950/50 text-emerald-500 border-emerald-900/50' : 'bg-red-950/50 text-red-500 border-red-900/50'}`}>
-                            {t.status === 'active' ? 'Aktif' : 'Suspended'}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6">
-                          <div className="flex justify-center gap-2">
-                            <button onClick={() => toggleTenantStatus(t.id, t.status)} title="Buka/Tutup Akses" className={`p-2 rounded-lg transition-all active:scale-95 border ${t.status === 'active' ? 'text-slate-400 hover:text-red-400 bg-slate-800 hover:bg-red-950/50 border-slate-700' : 'text-slate-400 hover:text-emerald-400 bg-slate-800 hover:bg-emerald-950/50 border-slate-700'}`}>
-                              <ShieldAlert size={16}/>
-                            </button>
-                            <button onClick={() => deleteTenant(t.id)} title="Hapus Tenant" className="text-slate-400 hover:text-red-500 bg-slate-800/50 hover:bg-red-950/30 p-2 rounded-lg transition-all active:scale-95 border border-slate-700/50"><Trash2 size={16}/></button>
-                          </div>
+                    {clientAdmins.map(admin => (
+                      <tr key={admin.uid} className="hover:bg-slate-800/30">
+                        <td className="p-4 font-bold text-white">{admin.name}</td>
+                        <td className="p-4 text-slate-400">{admin.email}</td>
+                        <td className="p-4"><span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-1 rounded font-mono text-xs font-bold">{admin.schoolId}</span></td>
+                        <td className="p-4 text-center">
+                          <button onClick={() => deleteAdmin(admin.uid)} className="text-red-500 hover:text-red-400 p-2"><Trash2 size={16}/></button>
                         </td>
                       </tr>
                     ))}
-                    {tenants.length === 0 && (
-                      <tr><td colSpan="5" className="text-center p-8 text-slate-500 text-sm font-bold">Belum ada Klien Sekolah yang terdaftar.</td></tr>
-                    )}
+                    {clientAdmins.length === 0 && <tr><td colSpan="4" className="p-8 text-center text-slate-500">Belum ada akun Admin Sekolah yang dibuat.</td></tr>}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* TAB BILLING (MOCKUP) */}
-          {activeTab === 'billing' && (
-            <div className="space-y-4 max-w-7xl mx-auto animate-in fade-in duration-300">
-               <h3 className="text-xl font-black text-white flex items-center gap-2"><CreditCard className="text-amber-500" size={20}/> Pusat Tagihan Klien</h3>
-               <div className="bg-slate-900 p-8 rounded-2xl border border-dashed border-slate-700 text-center">
-                  <CreditCard className="mx-auto text-slate-600 mb-4" size={48} />
-                  <h4 className="text-lg font-black text-white mb-2">Modul Billing Sedang Disiapkan</h4>
-                  <p className="text-slate-400 text-sm">Integrasi Payment Gateway (Midtrans/Xendit) akan dipasang di fase pengembangan berikutnya.</p>
-               </div>
+          {/* TAB PLACEHOLDER */}
+          {(activeTab === 'billing' || activeTab === 'database') && (
+            <div className="p-10 text-center border border-dashed border-slate-800 rounded-3xl mt-10">
+               <Activity size={48} className="mx-auto text-slate-600 mb-4" />
+               <h3 className="text-xl font-black text-slate-400">Modul Segera Hadir</h3>
+               <p className="text-sm text-slate-500 mt-2">Area ini disiapkan untuk integrasi Payment Gateway & Log Database.</p>
             </div>
           )}
 
         </div>
       </main>
 
-      {/* MODAL TAMBAH TENANT BARU */}
-      {showAddTenant && (
+      {/* MODAL TAMBAH KLIEN */}
+      {showAddClientModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[120]">
-          <div className="bg-slate-900 p-6 rounded-2xl w-full max-w-md shadow-2xl border border-slate-800 animate-in zoom-in-95 duration-200">
-            <h2 className="text-lg font-black mb-1 text-white flex items-center gap-2"><Building2 className="text-amber-500" size={20}/> Daftarkan Klien Baru</h2>
-            <p className="text-xs text-slate-400 mb-5">Sistem akan membuat ruang isolasi database khusus untuk sekolah ini.</p>
-            <form onSubmit={handleAddTenant} className="space-y-4">
-              <div>
-                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">ID Endpoint (Tanpa Spasi)</label>
-                 <input required value={tenantForm.id} placeholder="contoh: darma-pertiwi" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl outline-none focus:border-amber-500 text-sm font-bold text-white shadow-inner font-mono" onChange={e => setTenantForm({...tenantForm, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')})} />
-              </div>
-              <div>
-                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">Nama Yayasan / Sekolah</label>
-                 <input required value={tenantForm.name} placeholder="Yaspendik Darma Pertiwi" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl outline-none focus:border-amber-500 text-sm font-bold text-white shadow-inner" onChange={e => setTenantForm({...tenantForm, name: e.target.value})} />
-              </div>
-              <div>
-                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">Paket SaaS</label>
-                 <select value={tenantForm.plan} onChange={e => setTenantForm({...tenantForm, plan: e.target.value})} className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-500">
-                    <option value="Starter">Starter (Basic)</option>
-                    <option value="Pro">Pro (Recommended)</option>
-                    <option value="Enterprise">Enterprise (Custom)</option>
-                 </select>
-              </div>
-              <div className="flex gap-2 pt-3">
-                 <button type="button" onClick={() => setShowAddTenant(false)} className="flex-1 py-3 bg-slate-800 text-white rounded-xl text-sm font-bold active:scale-95 transition-colors">Batal</button>
-                 <button type="submit" className="flex-1 py-3 bg-amber-500 text-black rounded-xl text-sm font-black active:scale-95 shadow-[0_0_10px_rgba(245,158,11,0.2)] transition-colors">Buat Instansi</button>
-              </div>
-            </form>
+          <div className="bg-slate-900 p-6 rounded-2xl w-full max-w-lg border border-slate-800 animate-in zoom-in-95 duration-200">
+             <h2 className="text-xl font-black mb-4 text-white flex items-center gap-2"><Building2 className="text-amber-500"/> Registrasi Sekolah Baru</h2>
+             <form onSubmit={handleSaveClient} className="space-y-4">
+               <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">ID Tenant (Unik, Tanpa Spasi)</label><input required value={clientForm.id} onChange={e => setClientForm({...clientForm, id: e.target.value})} placeholder="cth: sdit-nurul-iman" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-amber-500 outline-none focus:border-amber-500" /></div>
+               <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">Nama Instansi Pendidikan</label><input required value={clientForm.name} onChange={e => setClientForm({...clientForm, name: e.target.value})} placeholder="SDIT Nurul Iman" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-500" /></div>
+               
+               {/* FORM WA & PIC BARU */}
+               <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950/50 border border-slate-800 rounded-xl">
+                 <div>
+                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest flex items-center gap-1"><User size={12}/> Nama PIC</label>
+                   <input required value={clientForm.picName} onChange={e => setClientForm({...clientForm, picName: e.target.value})} placeholder="Bpk. Budi" className="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-xs font-bold text-white outline-none focus:border-emerald-500" />
+                 </div>
+                 <div>
+                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest flex items-center gap-1"><Phone size={12}/> No WhatsApp</label>
+                   <input required value={clientForm.waNumber} onChange={e => setClientForm({...clientForm, waNumber: e.target.value})} placeholder="08123456789" className="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-xs font-bold text-white outline-none focus:border-emerald-500" />
+                 </div>
+               </div>
+
+               <div className="grid grid-cols-2 gap-3">
+                 <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">Paket Layanan</label><select value={clientForm.plan} onChange={e => setClientForm({...clientForm, plan: e.target.value})} className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-500 cursor-pointer"><option>Basic</option><option>Premium</option><option>Enterprise</option></select></div>
+                 <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">Tgl Kadaluarsa</label><input type="date" required value={clientForm.expiryDate} onChange={e => setClientForm({...clientForm, expiryDate: e.target.value})} className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm font-bold text-slate-300 outline-none focus:border-amber-500" /></div>
+               </div>
+               
+               <div className="flex gap-2 pt-4 border-t border-slate-800"><button type="button" onClick={() => setShowAddClientModal(false)} className="flex-1 py-3 bg-slate-800 text-white rounded-xl text-sm font-bold active:scale-95 transition-all">Batal</button><button type="submit" className="flex-1 py-3 bg-amber-500 text-black rounded-xl text-sm font-black active:scale-95 shadow-[0_0_10px_rgba(245,158,11,0.2)] transition-all">Buat Klien</button></div>
+             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TAMBAH ADMIN KLIEN */}
+      {showAddAdminModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[120]">
+          <div className="bg-slate-900 p-6 rounded-2xl w-full max-w-md border border-slate-800 animate-in zoom-in-95 duration-200">
+             <h2 className="text-xl font-black mb-1 text-white flex items-center gap-2"><KeyRound className="text-amber-500"/> Buat Akun TU/Admin</h2>
+             <p className="text-xs text-slate-400 mb-5">Akun ini akan mengelola guru di sekolah yang dipilih.</p>
+             <form onSubmit={handleCreateClientAdmin} className="space-y-4">
+               <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">Tugaskan di Sekolah</label>
+                  <select required value={adminForm.schoolId} onChange={e => setAdminForm({...adminForm, schoolId: e.target.value})} className="w-full p-3 bg-slate-950 border border-amber-500/50 rounded-xl text-sm font-black text-amber-500 outline-none focus:border-amber-500">
+                     <option value="">-- Pilih Sekolah --</option>
+                     {clients.map(c => <option key={c.id} value={c.id}>{c.name} ({c.id})</option>)}
+                  </select>
+               </div>
+               <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">Nama Lengkap</label><input required value={adminForm.name} onChange={e => setAdminForm({...adminForm, name: e.target.value})} placeholder="Operator SDIT" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-500" /></div>
+               <div className="grid grid-cols-2 gap-3">
+                 <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">Email Login</label><input type="email" required value={adminForm.email} onChange={e => setAdminForm({...adminForm, email: e.target.value})} placeholder="admin@sdit.com" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-500" /></div>
+                 <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">Password</label><input type="password" required value={adminForm.password} onChange={e => setAdminForm({...adminForm, password: e.target.value})} placeholder="min. 6 karakter" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-500" /></div>
+               </div>
+               <div className="flex gap-2 pt-4 border-t border-slate-800"><button type="button" onClick={() => setShowAddAdminModal(false)} className="flex-1 py-3 bg-slate-800 text-white rounded-xl text-sm font-bold">Batal</button><button type="submit" className="flex-1 py-3 bg-amber-500 text-black rounded-xl text-sm font-black">Buat Akun</button></div>
+             </form>
           </div>
         </div>
       )}
