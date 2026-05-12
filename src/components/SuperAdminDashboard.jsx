@@ -46,10 +46,11 @@ export default function SuperAdminDashboard({ onLogout }) {
   const [editGuruId, setEditGuruId] = useState(null);
   const [guruFormData, setGuruFormData] = useState({ name: '', email: '' });
 
-  useEffect(() => {
+useEffect(() => {
     const fetchData = (path, key) => onValue(ref(db, path), snap => {
       const val = snap.val();
-      if (val && typeof val === 'object') setData(prev => ({ ...prev, [key]: Object.keys(val).map(k => ({ id: k, ...val[k] })) }));
+      // PERBAIKAN: Posisi "id: k" dipindah ke belakang agar kunci Firebase tidak tertimpa ID Siswa!
+      if (val && typeof val === 'object') setData(prev => ({ ...prev, [key]: Object.keys(val).map(k => ({ ...val[k], id: k })) }));
       else setData(prev => ({ ...prev, [key]: [] }));
     });
     fetchData('users', 'users');
@@ -58,7 +59,7 @@ export default function SuperAdminDashboard({ onLogout }) {
     fetchData('exam_sessions', 'sessions');
     fetchData('leaderboard', 'lead'); 
   }, []);
-
+  
   const pendingTeachers = data.users.filter(u => u?.status === 'pending' && u?.email !== 'admin@sekolah.com');
   const activeTeachers = data.users.filter(u => u?.status !== 'pending' && u?.email !== 'admin@sekolah.com');
   const allAdminSessions = data.sessions.sort((a,b) => b.timestamp - a.timestamp);
