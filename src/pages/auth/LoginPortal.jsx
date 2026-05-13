@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { db, auth } from '../../config/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { ref, set, push, onValue, get, update } from 'firebase/database';
-import { GraduationCap, User, Lock, Key, LayoutGrid, Users, CheckCircle, RefreshCw, ShieldCheck } from 'lucide-react';
+import { GraduationCap, User, Lock, Key, LayoutGrid, Users, CheckCircle, RefreshCw, ShieldCheck, UserPlus, Loader2, ArrowLeft } from 'lucide-react';
 
 const APP_VERSION = "2.0.0";
 
@@ -20,6 +20,14 @@ export default function LoginPortal() {
   const [isSyncing, setIsSyncing] = useState(false); 
   const [isStarting, setIsStarting] = useState(false);
   
+  // State Form Admin/Guru Baru
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [schoolCode, setSchoolCode] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
+
   // Data Ujian
   const [activeSessions, setActiveSessions] = useState([]);
   const [scannedToken, setScannedToken] = useState('');
@@ -45,7 +53,6 @@ export default function LoginPortal() {
       const serverVersion = snapshot.val();
       if (serverVersion && serverVersion !== APP_VERSION) {
         setIsSyncing(true); 
-        //setTimeout(() => { window.location.reload(true); }, 3000);
       }
     });
     return () => unsub();
@@ -88,16 +95,19 @@ export default function LoginPortal() {
     if (isStarting) return; 
     setIsStarting(true); 
 
-    const name = e.target.studentName.value.trim();
+    const studentNameInput = e.target.studentName.value.trim();
     const sClass = e.target.studentClass.value;
-    const sSubKelas = e.target.studentSubClass.value.toUpperCase().trim();
     const tokenInput = e.target.token.value.toUpperCase();
     
+    // Validasi Sesi & Auto-Deteksi SubKelas dari Token
     const validSession = activeSessions.find(s => s.token === tokenInput && s.kelas === sClass);
     if (!validSession) {
        setIsStarting(false);
-       return alert("❌ AKSES DITOLAK: Token tidak ditemukan atau Kelas salah!");
+       return alert("❌ AKSES DITOLAK: Token tidak ditemukan atau Kelas Anda salah!");
     }
+
+    // Ekstrak otomatis subKelas dari data sesi yang dibuat Guru
+    const autoSubKelas = validSession.subKelas || '-';
 
     const now = new Date();
     const timeNow = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
@@ -127,7 +137,7 @@ export default function LoginPortal() {
         const allStudents = snapshot.val();
         for (const key in allStudents) {
           const s = allStudents[key];
-          if (s.token === tokenInput && s.name.toLowerCase() === name.toLowerCase()) {
+          if (s.token === tokenInput && s.name.toLowerCase() === studentNameInput.toLowerCase()) {
             if (s.status === 'Selesai') {
                setIsStarting(false);
                return alert("⚠️ Ujian untuk nama ini sudah diselesaikan dan dikumpulkan.");
@@ -152,9 +162,9 @@ export default function LoginPortal() {
         const newRef = push(ref(db, 'live_students'));
         finalData = { 
           id: newRef.key, 
-          name, 
+          name: studentNameInput, 
           class: sClass, 
-          subKelas: sSubKelas, 
+          subKelas: autoSubKelas, // Disisipkan otomatis ke pangkalan data
           token: tokenInput, 
           mapel: validSession.mapel, 
           teacherEmail: validSession.teacherEmail, 
@@ -170,7 +180,6 @@ export default function LoginPortal() {
       localStorage.setItem('studentData', JSON.stringify(finalData));
       
       setIsStarting(false);
-      // Lempar ke Route ExamRoom V3
       navigate('/exam');
     } catch (error) { 
       alert("Koneksi bermasalah: " + error.message); 
@@ -179,12 +188,15 @@ export default function LoginPortal() {
   };
 
   // ==========================================
-  // LOGIKA LOGIN ADMIN / GURU (ROUTING OTOMATIS)
+  // LOGIKA LOGIN ADMIN / GURU
   // ==========================================
   const handleAdminLogin = async (e) => {
     e.preventDefault();
+    setErrorMsg('');
+    setIsLoadingAdmin(true);
+
     try {
-      const userCred = await signInWithEmailAndPassword(auth, e.target.email.value, e.target.password.value);
+      const userCred = await signInWithEmailAndPassword(auth, email, password);
       
       // Deteksi Master Admin
       if (userCred.user.email === 'admin@sekolah.com') {
@@ -196,35 +208,75 @@ export default function LoginPortal() {
            const userData = snap.val();
            if (userData.status === 'pending') { 
                await signOut(auth); 
-               alert("AKUN BELUM AKTIF! Menunggu persetujuan Admin Sekolah."); 
+               alert("AKUN BELUM AKTIF!\nMenunggu persetujuan Admin Tata Usaha Sekolah."); 
            } else if (userData.role === 'admin_sekolah') {
                navigate('/school-admin');
+           } else if (userData.role === 'proctor') {
+               navigate('/proctor');
            } else {
                navigate('/teacher');
            }
         } else {
            await signOut(auth);
-           alert("Data user tidak ditemukan di sistem!");
+           setErrorMsg("Data user tidak ditemukan di sistem!");
         }
       }
-    } catch (err) { alert("Login Gagal! Periksa email dan password."); }
+    } catch (err) { 
+      setErrorMsg("Login Gagal! Periksa email dan password."); 
+    } finally {
+      setIsLoadingAdmin(false);
+    }
   };
 
   const handleAdminRegister = async (e) => {
     e.preventDefault();
+    setErrorMsg('');
+    setIsLoadingAdmin(true);
+
+    if (!schoolCode) {
+      setErrorMsg('Kode Instansi wajib diisi!');
+      setIsLoadingAdmin(false);
+      return;
+    }
+
     try {
-      const userCred = await createUserWithEmailAndPassword(auth, e.target.email.value, e.target.password.value);
+      const cleanSchoolCode = schoolCode.trim().toLowerCase();
+
+      // 1. Validasi Kode Sekolah
+      const schoolSnap = await get(ref(db, `clients/${cleanSchoolCode}`));
+      if (!schoolSnap.exists()) {
+        throw new Error(`Kode Sekolah "${schoolCode}" tidak terdaftar. Hubungi TU.`);
+      }
+
+      // 2. Buat Akun
+      const userCred = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // 3. Simpan dengan status PENDING
       await set(ref(db, `users/${userCred.user.uid}`), { 
-          name: e.target.name.value, 
-          email: e.target.email.value, 
+          name: name, 
+          email: email, 
           role: 'teacher', 
+          schoolId: cleanSchoolCode,
           status: 'pending', 
           createdAt: Date.now() 
       });
+      
       await signOut(auth); 
-      alert("DAFTAR BERHASIL! Tunggu konfirmasi Admin Tata Usaha."); 
+      alert(`DAFTAR BERHASIL!\nAkun Anda terhubung dengan Instansi: ${cleanSchoolCode.toUpperCase()}.\nSilakan tunggu konfirmasi Admin Tata Usaha.`); 
+      
       setIsRegistering(false);
-    } catch (err) { alert("Gagal mendaftar: " + err.message); }
+      setEmail(''); setPassword(''); setName(''); setSchoolCode('');
+    } catch (err) { 
+      if (err.code === 'auth/email-already-in-use') {
+        setErrorMsg('Email ini sudah terdaftar.');
+      } else if (err.code === 'auth/weak-password') {
+        setErrorMsg('Password minimal 6 karakter.');
+      } else {
+        setErrorMsg(err.message.replace("Firebase: ", ""));
+      }
+    } finally {
+      setIsLoadingAdmin(false);
+    }
   };
 
   return (
@@ -249,7 +301,7 @@ export default function LoginPortal() {
             <div className="w-full max-w-md bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl shadow-xl border border-gray-100 dark:border-slate-700">
               <div className="flex flex-col items-center mb-8">
                 {/* SENSOR RAHASIA: KLIK LOGO 5X */}
-                <div onClick={() => { setLogoClicks(c => c + 1); if (logoClicks + 1 >= 5) { setCurrentView('admin-login'); setLogoClicks(0); } }} className="bg-emerald-500 p-4 rounded-2xl text-white mb-4 cursor-pointer shadow-lg shadow-emerald-500/30 transition-transform active:scale-90">
+                <div onClick={() => { setLogoClicks(c => c + 1); if (logoClicks + 1 >= 5) { setCurrentView('admin-login'); setLogoClicks(0); setEmail(''); setPassword(''); } }} className="bg-emerald-500 p-4 rounded-2xl text-white mb-4 cursor-pointer shadow-lg shadow-emerald-500/30 transition-transform active:scale-90">
                     <GraduationCap size={40} />
                 </div>
                 <h1 className="text-2xl font-black text-slate-800 dark:text-white uppercase tracking-tighter">Darma Pertiwi CBT</h1>
@@ -271,18 +323,12 @@ export default function LoginPortal() {
                     <input name="studentName" required placeholder="Nama Lengkap" className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 font-bold" />
                 </div>
                 
-                <div className="flex flex-col sm:flex-row gap-4 sm:gap-2">
-                  <div className="relative flex-1">
-                      <LayoutGrid className="absolute left-4 top-3.5 text-gray-400" size={20} />
-                      <select name="studentClass" required className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 appearance-none font-bold">
-                          <option value="">Tingkat...</option>
-                          {availableClasses.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                  </div>
-                  <div className="relative w-full sm:w-1/3">
-                      <Users className="absolute left-3 top-3.5 text-gray-400" size={20} />
-                      <input name="studentSubClass" required placeholder="Sub (A)" className="w-full pl-10 pr-3 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 uppercase font-black text-center tracking-wider" />
-                  </div>
+                <div className="relative w-full">
+                    <LayoutGrid className="absolute left-4 top-3.5 text-gray-400" size={20} />
+                    <select name="studentClass" required className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 appearance-none font-bold">
+                        <option value="">Pilih Tingkat Kelas...</option>
+                        {availableClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
                 </div>
 
                 <div className="relative">
@@ -310,34 +356,102 @@ export default function LoginPortal() {
         )}
 
         {/* ==========================================
-            HALAMAN RAHASIA: LOGIN ADMIN & GURU
+            HALAMAN RAHASIA: LOGIN ADMIN & GURU (UI BARU)
         ========================================== */}
         {currentView === 'admin-login' && (
-          <div className="flex items-center justify-center min-h-screen p-4 md:p-6 bg-slate-950 animate-in fade-in duration-300">
-            <div className="w-full max-w-md bg-white p-6 md:p-8 rounded-3xl shadow-xl">
-              <h1 className="text-2xl font-black mb-6 text-slate-800 flex items-center gap-2"><Lock className="text-emerald-500"/> Akses Sistem</h1>
+          <div className="absolute inset-0 z-50 flex items-center justify-center min-h-screen p-4 md:p-6 bg-[#0f172a] animate-in fade-in duration-300">
+            <div className="w-full max-w-[400px] bg-white rounded-[24px] p-8 shadow-2xl">
               
+              <div className="flex items-center gap-2 mb-8">
+                {isRegistering ? <UserPlus className="text-emerald-500" size={24} /> : <Lock className="text-emerald-500" size={24} />}
+                <h2 className="text-[22px] font-black text-slate-800 tracking-tight">
+                  {isRegistering ? 'Daftar Guru Baru' : 'Akses Sistem'}
+                </h2>
+              </div>
+
+              {errorMsg && (
+                <div className="mb-5 p-3 bg-red-50 border border-red-200 text-red-600 text-xs font-bold rounded-xl animate-pulse">
+                  {errorMsg}
+                </div>
+              )}
+
               {!isRegistering ? (
                 <form onSubmit={handleAdminLogin} className="space-y-4">
-                  <input name="email" type="email" placeholder="Email Terdaftar" required className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
-                  <input name="password" type="password" placeholder="Password" required className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
-                  <button type="submit" className="w-full bg-slate-900 hover:bg-black text-white py-4 rounded-xl font-bold mt-2 transition-all active:scale-95">LOGIN SISTEM</button>
-                  
-                  <div className="pt-5 mt-5 border-t border-slate-100 space-y-3">
-                    <button type="button" onClick={() => setCurrentView('proctor-login')} className="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2">
-                      <ShieldCheck size={18}/> Masuk Sebagai Pengawas Ruang
+                  <div>
+                    <input 
+                      type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                      placeholder="Email Terdaftar" 
+                      className="w-full px-4 py-3.5 border border-emerald-300 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all bg-emerald-50/30"
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Password" 
+                      className="w-full px-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all"
+                    />
+                  </div>
+
+                  <div className="pt-2">
+                    <button type="submit" disabled={isLoadingAdmin} className="w-full bg-[#0f172a] hover:bg-slate-800 text-white py-3.5 rounded-xl text-sm font-black tracking-widest transition-all shadow-md active:scale-[0.98] disabled:opacity-70 flex justify-center items-center gap-2">
+                      {isLoadingAdmin ? <Loader2 size={18} className="animate-spin" /> : 'LOGIN SISTEM'}
                     </button>
-                    <button type="button" onClick={() => setIsRegistering(true)} className="w-full text-emerald-600 font-bold text-sm py-2">Belum punya akun? Daftar Guru Baru</button>
-                    <button type="button" onClick={() => setCurrentView('login')} className="w-full text-gray-500 font-medium text-sm py-2">Batal, Kembali ke Portal Siswa</button>
+                  </div>
+
+                  <div className="pt-2 space-y-3 text-center">
+                    <button type="button" onClick={() => setCurrentView('proctor-login')} className="w-full bg-blue-50 hover:bg-blue-100 text-blue-600 py-3.5 rounded-xl text-sm font-black transition-all flex items-center justify-center gap-2">
+                      <ShieldCheck size={18} /> Masuk Sebagai Pengawas Ruang
+                    </button>
+                    <button type="button" onClick={() => { setIsRegistering(true); setErrorMsg(''); setEmail(''); setPassword(''); }} className="text-[11px] font-black text-emerald-600 hover:text-emerald-700 uppercase tracking-widest transition-colors block w-full pt-2">
+                      Belum punya akun? Daftar Guru Baru
+                    </button>
+                    <button type="button" onClick={() => setCurrentView('login')} className="text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-colors block w-full pt-1">
+                      Batal, Kembali ke Portal Siswa
+                    </button>
                   </div>
                 </form>
               ) : (
                 <form onSubmit={handleAdminRegister} className="space-y-4">
-                  <input name="name" type="text" placeholder="Nama Lengkap & Gelar" required className="w-full p-3.5 bg-gray-50 border border-emerald-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
-                  <input name="email" type="email" placeholder="Email Baru" required className="w-full p-3.5 bg-gray-50 border border-emerald-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
-                  <input name="password" type="password" placeholder="Buat Password" required className="w-full p-3.5 bg-gray-50 border border-emerald-200 rounded-xl outline-none focus:ring-2 ring-emerald-400" />
-                  <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold mt-2 transition-all active:scale-95 shadow-lg shadow-emerald-500/30">DAFTARKAN AKUN</button>
-                  <button type="button" onClick={() => setIsRegistering(false)} className="w-full text-gray-500 font-medium text-sm pt-2 block">Batal, kembali login</button>
+                  <div>
+                    <input 
+                      type="text" required value={name} onChange={(e) => setName(e.target.value)}
+                      placeholder="Nama Lengkap & Gelar" 
+                      className="w-full px-4 py-3.5 border border-emerald-300 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all bg-emerald-50/30"
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="text" required value={schoolCode} onChange={(e) => setSchoolCode(e.target.value)}
+                      placeholder="Kode Instansi / Sekolah (Cth: SEKOLAH-01)" 
+                      className="w-full px-4 py-3.5 border border-emerald-300 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-bold text-slate-800 placeholder-slate-400 transition-all bg-emerald-50/30 uppercase"
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                      placeholder="Email Baru" 
+                      className="w-full px-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="password" required minLength="6" value={password} onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Buat Password" 
+                      className="w-full px-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all"
+                    />
+                  </div>
+
+                  <div className="pt-2">
+                    <button type="submit" disabled={isLoadingAdmin} className="w-full bg-emerald-500 hover:bg-emerald-400 text-white py-3.5 rounded-xl text-sm font-black tracking-widest transition-all shadow-md shadow-emerald-500/30 active:scale-[0.98] disabled:opacity-70 flex justify-center items-center gap-2">
+                      {isLoadingAdmin ? <Loader2 size={18} className="animate-spin" /> : 'DAFTARKAN AKUN'}
+                    </button>
+                  </div>
+
+                  <div className="pt-2 text-center">
+                    <button type="button" onClick={() => { setIsRegistering(false); setErrorMsg(''); setEmail(''); setPassword(''); }} className="text-[11px] font-bold text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center gap-1 w-full">
+                      <ArrowLeft size={12} /> Batal, kembali login
+                    </button>
+                  </div>
                 </form>
               )}
             </div>
@@ -348,7 +462,7 @@ export default function LoginPortal() {
             HALAMAN AKSES PENGAWAS (PROCTOR LOGIN PIN)
         ========================================== */}
         {currentView === 'proctor-login' && (
-          <div className="flex items-center justify-center min-h-screen p-4 bg-slate-950 animate-in zoom-in duration-300">
+          <div className="absolute inset-0 z-50 flex items-center justify-center min-h-screen p-4 bg-slate-950 animate-in zoom-in duration-300">
              <div className="w-full max-w-sm bg-white p-8 rounded-3xl shadow-xl text-center border border-slate-200">
                 <ShieldCheck size={48} className="mx-auto text-blue-500 mb-4" />
                 <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest mb-6">Akses Pengawas</h2>

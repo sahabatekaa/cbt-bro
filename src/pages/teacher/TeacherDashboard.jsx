@@ -1,7 +1,7 @@
 // src/pages/teacher/TeacherDashboard.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../../config/firebase';
-import { getAuth, signOut, onAuthStateChanged, updatePassword } from 'firebase/auth'; // Tambahkan updatePassword
+import { getAuth, signOut, onAuthStateChanged, updatePassword } from 'firebase/auth'; 
 import { ref as dbRef, onValue, push, remove, update, set } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
@@ -13,7 +13,7 @@ import {
   Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, 
   Send, FileText, ClipboardList, ShieldAlert, QrCode, Zap, 
   ShieldCheck, CheckSquare, Check, Percent, Clock, AlertTriangle, Loader2,
-  LayoutDashboard, Radio, KeyRound // Tambahkan Icon Baru
+  LayoutDashboard, Radio, KeyRound 
 } from 'lucide-react';
 
 export default function TeacherDashboard() {
@@ -24,15 +24,17 @@ export default function TeacherDashboard() {
   const [teacherProfile, setTeacherProfile] = useState(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [tempProfileName, setTempProfileName] = useState('');
-  const [newPassword, setNewPassword] = useState(''); // State untuk ganti password
+  const [newPassword, setNewPassword] = useState(''); 
 
-  const [activeTab, setActiveTab] = useState(localStorage.getItem('teacherTab') || 'dashboard'); // Default ke dashboard
+  const [activeTab, setActiveTab] = useState(localStorage.getItem('teacherTab') || 'dashboard'); 
   useEffect(() => { localStorage.setItem('teacherTab', activeTab); }, [activeTab]);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  // Data Global (Termasuk Master Data dari Admin)
+  // Data Global 
   const [data, setData] = useState({ live: [], bank: [], lead: [], sessions: [], classes: [], subjects: [] });
+  const [schoolInfo, setSchoolInfo] = useState(null); // State untuk nyimpan info sekolah (termasuk status suspend)
+
   const [showModal, setShowModal] = useState(false);
   const [activeMonitorToken, setActiveMonitorToken] = useState(localStorage.getItem('activeMonitorToken') || '');
   
@@ -131,6 +133,20 @@ export default function TeacherDashboard() {
     fetchData('master_subjects', 'subjects');
   }, [currentUserEmail]);
 
+  // 3. Tarik Status Sekolah untuk Tembok Suspend
+  useEffect(() => {
+    if (!schoolId) return;
+    const schoolRef = dbRef(db, `clients/${schoolId}`);
+    const unsubSchool = onValue(schoolRef, snap => {
+       if(snap.exists()) {
+          setSchoolInfo(snap.val());
+       } else {
+          setSchoolInfo(null);
+       }
+    });
+    return () => unsubSchool();
+  }, [schoolId]);
+
   // --- FUNGSI LOGOUT INTERNAL ---
   const handleLogout = () => {
     signOut(auth).then(() => {
@@ -158,7 +174,7 @@ export default function TeacherDashboard() {
   const schoolClasses = safeClasses.filter(c => c?.schoolId === schoolId);
   const schoolSubjects = safeSubjects.filter(s => s?.schoolId === schoolId);
 
-  // Filter untuk Bank Soal (berdasarkan soal yang sudah pernah dibuat)
+  // Filter untuk Bank Soal
   const availableBankMapel = [...new Set(myQuestions.map(q => q?.mapel).filter(Boolean))];
   const availableBankKelas = [...new Set(myQuestions.map(q => q?.kelas).filter(Boolean))];
   const filteredQuestions = myQuestions.filter(q => (bankMapel === '' || q?.mapel === bankMapel) && (bankKelas === '' || q?.kelas === bankKelas));
@@ -509,6 +525,25 @@ export default function TeacherDashboard() {
     );
   }
 
+  // --- PENANGKAL GERBANG SUSPEND ---
+  if (schoolInfo && schoolInfo.status === 'suspended') {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center animate-in fade-in duration-500">
+         <div className="bg-red-50 p-8 rounded-[32px] border-2 border-red-200 shadow-xl max-w-lg w-full flex flex-col items-center">
+            <ShieldAlert size={80} className="text-red-600 mb-6 animate-pulse" />
+            <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">Akses Ditangguhkan</h2>
+            <p className="text-sm font-bold text-slate-600 mb-8 leading-relaxed">
+              Layanan CBT untuk instansi <b>{schoolInfo?.name || schoolId}</b> saat ini sedang ditangguhkan oleh Master Administrator.
+              Silakan hubungi <b>Admin Tata Usaha Sekolah</b> Anda untuk informasi lebih lanjut.
+            </p>
+            <button onClick={handleLogout} className="w-full bg-slate-800 hover:bg-slate-700 text-white px-6 py-3.5 rounded-xl font-black text-sm flex items-center justify-center gap-2 shadow-md transition-all">
+               <LogOut size={18} /> Keluar Akun
+            </button>
+         </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-[#f8fafc] overflow-hidden font-sans animate-in fade-in duration-500">
       <style>{`
@@ -852,7 +887,7 @@ export default function TeacherDashboard() {
           {/* TAB REKAP NILAI & CETAK ADMINISTRASI */}
           {activeTab === 'recap' && (
             <div className="space-y-5 max-w-7xl mx-auto print:max-w-full">
-              <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-200 print:hidden space-y-4">
+              <div className="bg-white p-5 md:p-6 rounded-2xl shadow-sm border border-slate-200 print:hidden space-y-4">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-100 pb-3">
                   <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-emerald-500" size={20}/> Pusat Administrasi Ujian</h3>
                   <button onClick={handleDeleteMyRecap} className="w-full md:w-auto bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-4 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-colors shadow-sm"><Trash2 size={16}/> Bersihkan Nilai Saya</button>
