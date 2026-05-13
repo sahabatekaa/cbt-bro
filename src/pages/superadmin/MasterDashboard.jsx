@@ -2,17 +2,18 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { ref, onValue, set, remove, update } from 'firebase/database';
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth'; // Tambahkan signOut
+import { useNavigate } from 'react-router-dom'; // Tambahkan useNavigate
 import { Building2, CreditCard, Users, LogOut, Plus, Trash2, Database, Menu, X, Landmark, KeyRound, Activity, User, Phone, MessageCircle } from 'lucide-react';
 
 export default function MasterDashboard({ onLogout }) {
+  const navigate = useNavigate(); // Inisialisasi useNavigate
   const [activeTab, setActiveTab] = useState('clients');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [clients, setClients] = useState([]);
   const [clientAdmins, setClientAdmins] = useState([]);
   
   const [showAddClientModal, setShowAddClientModal] = useState(false);
-  // Tambahan state picName dan waNumber
   const [clientForm, setClientForm] = useState({ id: '', name: '', plan: 'Basic', expiryDate: '', picName: '', waNumber: '' });
 
   const [showAddAdminModal, setShowAddAdminModal] = useState(false);
@@ -41,6 +42,17 @@ export default function MasterDashboard({ onLogout }) {
     return () => { unsubClients(); unsubUsers(); };
   }, []);
 
+  // --- FUNGSI LOGOUT INTERNAL ---
+  const handleLogout = () => {
+    const auth = getAuth();
+    signOut(auth).then(() => {
+      localStorage.clear();
+      navigate('/login');
+    }).catch((error) => {
+      alert("Gagal keluar: " + error.message);
+    });
+  };
+
   // --- MANAJEMEN KLIEN (SEKOLAH) ---
   const handleSaveClient = (e) => {
     e.preventDefault();
@@ -50,8 +62,8 @@ export default function MasterDashboard({ onLogout }) {
       name: clientForm.name,
       plan: clientForm.plan,
       expiryDate: clientForm.expiryDate,
-      picName: clientForm.picName, // Simpan Nama PIC
-      waNumber: clientForm.waNumber, // Simpan Nomor WA
+      picName: clientForm.picName,
+      waNumber: clientForm.waNumber,
       status: 'active',
       createdAt: Date.now()
     }).then(() => {
@@ -104,7 +116,6 @@ export default function MasterDashboard({ onLogout }) {
     if(window.confirm("Hapus akses admin sekolah ini?")) remove(ref(db, `users/${uid}`));
   };
 
-  // Format link WhatsApp otomatis
   const generateWALink = (phone) => {
     if (!phone) return '#';
     let cleanPhone = phone.replace(/[^0-9]/g, '');
@@ -137,7 +148,12 @@ export default function MasterDashboard({ onLogout }) {
           <NavItem tab="billing" icon={CreditCard} label="Tagihan & Paket" />
           <NavItem tab="database" icon={Database} label="System Log" />
         </nav>
-        <div className="p-4 border-t border-slate-800"><button onClick={onLogout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-950 hover:bg-red-900 text-red-500 hover:text-white rounded-xl text-xs font-bold transition-colors"><LogOut size={16}/> Keluar</button></div>
+        <div className="p-4 border-t border-slate-800">
+            {/* INI TOMBOL KELUAR YANG SUDAH DIJAHIT */}
+            <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-950 hover:bg-red-900 text-red-500 hover:text-white rounded-xl text-xs font-bold transition-colors">
+                <LogOut size={16}/> Keluar
+            </button>
+        </div>
       </aside>
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-[#0a0f1c]">
@@ -179,7 +195,6 @@ export default function MasterDashboard({ onLogout }) {
                          </div>
                        </div>
                        
-                       {/* Kolom Info PIC & WhatsApp */}
                        <div className="md:border-l border-t md:border-t-0 border-slate-800 md:pl-4 pt-3 md:pt-0 w-full md:w-48 shrink-0 flex flex-col justify-between">
                           <div className="space-y-2 mb-3">
                             <div>
@@ -265,7 +280,6 @@ export default function MasterDashboard({ onLogout }) {
                <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">ID Tenant (Unik, Tanpa Spasi)</label><input required value={clientForm.id} onChange={e => setClientForm({...clientForm, id: e.target.value})} placeholder="cth: sdit-nurul-iman" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-amber-500 outline-none focus:border-amber-500" /></div>
                <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest">Nama Instansi Pendidikan</label><input required value={clientForm.name} onChange={e => setClientForm({...clientForm, name: e.target.value})} placeholder="SDIT Nurul Iman" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-500" /></div>
                
-               {/* FORM WA & PIC BARU */}
                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950/50 border border-slate-800 rounded-xl">
                  <div>
                    <label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block tracking-widest flex items-center gap-1"><User size={12}/> Nama PIC</label>

@@ -1,16 +1,18 @@
 // src/pages/teacher/TeacherDashboard.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../../config/firebase'; // Menggunakan db root
-import { getAuth } from 'firebase/auth';
+import { getAuth, signOut } from 'firebase/auth'; // Tambahkan signOut
+import { useNavigate } from 'react-router-dom'; // Tambahkan useNavigate
 import { ref as dbRef, onValue, push, remove, update, set } from 'firebase/database';
 import { useAuth } from '../../contexts/AuthContext';
 import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
-import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck, CheckSquare, Check, Percent, Clock } from 'lucide-react';
+import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck, CheckSquare, Check, Percent, Clock, Building2 } from 'lucide-react';
 
-export default function TeacherDashboard({ onLogout }) {
-  const APP_VERSION = "3.0.0 Hybrid";
+export default function TeacherDashboard() {
+  const APP_VERSION = "2.0.0";
+  const navigate = useNavigate(); // Inisialisasi router
   const auth = getAuth();
   const { userData } = useAuth();
   const currentUserEmail = auth.currentUser?.email || userData?.email || 'guru@unknown.com';
@@ -33,7 +35,7 @@ export default function TeacherDashboard({ onLogout }) {
   const [essayQuestions, setEssayQuestions] = useState([]);
   const [essayScores, setEssayScores] = useState({});
 
-  const [teacherProfile, setTeacherProfile] = useState({ name: 'Memuat...', email: currentUserEmail });
+  const [teacherProfile, setTeacherProfile] = useState({ name: 'Memuat...', email: currentUserEmail, schoolId: '' });
   const [tempProfileName, setTempProfileName] = useState(''); 
   
   const fileInputRef = useRef(null);
@@ -77,7 +79,7 @@ export default function TeacherDashboard({ onLogout }) {
           setTeacherProfile(snap.val());
           setTempProfileName(snap.val().name);
         } else {
-          setTeacherProfile({ name: currentUserEmail.split('@')[0], email: currentUserEmail });
+          setTeacherProfile({ name: currentUserEmail.split('@')[0], email: currentUserEmail, schoolId: '' });
           setTempProfileName(currentUserEmail.split('@')[0]);
         }
       });
@@ -98,6 +100,16 @@ export default function TeacherDashboard({ onLogout }) {
     fetchData('leaderboard', 'lead'); 
     fetchData('exam_sessions', 'sessions');
   }, [currentUserEmail, auth.currentUser]);
+
+  // --- FUNGSI LOGOUT INTERNAL ---
+  const handleLogout = () => {
+    signOut(auth).then(() => {
+      localStorage.clear();
+      navigate('/login');
+    }).catch((error) => {
+      alert("Gagal keluar: " + error.message);
+    });
+  };
 
   const myQuestions = (data.bank || []).filter(q => q?.teacherEmail === currentUserEmail);
   const mySessions = (data.sessions || []).filter(s => s?.teacherEmail === currentUserEmail).sort((a,b) => b.timestamp - a.timestamp);
@@ -417,7 +429,7 @@ export default function TeacherDashboard({ onLogout }) {
         <div className="p-4 mx-3 mt-3 mb-1 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-xl uppercase shadow-inner shrink-0">{teacherProfile?.name?.charAt(0) || 'G'}</div>
           <div className="min-w-0">
-            <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-0.5">VERSI {APP_VERSION}</p>
+            <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-0.5">{teacherProfile?.schoolId ? `Instansi: ${teacherProfile.schoolId}` : `VERSI ${APP_VERSION}`}</p>
             <p className="text-xs font-bold truncate text-slate-800">{teacherProfile?.name}</p>
           </div>
         </div>
@@ -434,7 +446,12 @@ export default function TeacherDashboard({ onLogout }) {
             <button onClick={triggerGlobalUpdate} className="w-full flex items-center justify-center gap-2 p-2.5 bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-600 rounded-lg font-black text-[10px] shadow-sm transition-all active:scale-95 uppercase tracking-tighter"><Zap size={14}/> Rilis Update</button>
           </div>
         )}
-        <div className="p-4 border-t border-slate-100"><button onClick={onLogout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 rounded-xl font-bold text-sm transition-colors shadow-sm"><LogOut size={16}/> Keluar Akun</button></div>
+        <div className="p-4 border-t border-slate-100">
+           {/* INI TOMBOL KELUAR YANG SUDAH DIJAHIT */}
+           <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 rounded-xl font-bold text-sm transition-colors shadow-sm">
+               <LogOut size={16}/> Keluar Akun
+           </button>
+        </div>
       </aside>
       
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
@@ -819,17 +836,31 @@ export default function TeacherDashboard({ onLogout }) {
                   </div>
                 </div>
                 
-                <form onSubmit={handleUpdateProfile} className="space-y-5">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Nama Lengkap beserta Gelar Akademik</label>
-                    <input required value={tempProfileName} onChange={(e) => setTempProfileName(e.target.value)} placeholder="Contoh: Susi Susanti, S.Pd., M.Si." className="w-full p-3 border border-slate-200 bg-slate-50 rounded-xl outline-none focus:border-emerald-500 focus:bg-white text-sm font-bold text-slate-800 transition-colors shadow-inner" />
-                    <p className="text-[10px] text-slate-400 mt-1.5 font-medium">Nama ini otomatis digunakan sebagai tanda tangan PDF.</p>
+                <form onSubmit={handleUpdateProfile}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Nama Lengkap beserta Gelar Akademik</label>
+                      <input required value={tempProfileName} onChange={(e) => setTempProfileName(e.target.value)} placeholder="Contoh: Susi Susanti, S.Pd., M.Si." className="w-full p-3 border border-slate-200 bg-slate-50 rounded-xl outline-none focus:border-emerald-500 focus:bg-white text-sm font-bold text-slate-800 transition-colors shadow-inner" />
+                      <p className="text-[10px] text-slate-400 mt-1.5 font-medium">Nama ini otomatis digunakan sebagai tanda tangan PDF.</p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Email Akun (Login)</label>
+                      <input disabled value={teacherProfile?.email || currentUserEmail} className="w-full p-3 border border-slate-200 bg-slate-100 rounded-xl text-sm font-bold text-slate-500 cursor-not-allowed" />
+                    </div>
+                    
+                    {/* BAGIAN INFORMASI SEKOLAH DAN TUGAS */}
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest flex items-center gap-1"><Building2 size={12}/> Instansi Sekolah</label>
+                      <input disabled value={teacherProfile?.schoolId?.toUpperCase() || 'BELUM TERDAFTAR'} className="w-full p-3 border border-emerald-200 bg-emerald-50 rounded-xl text-sm font-black text-emerald-700 cursor-not-allowed uppercase" />
+                      <p className="text-[9px] text-slate-400 mt-1.5 font-medium">*Instansi diatur oleh Admin Sekolah.</p>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Tugas / Jabatan</label>
+                      <input disabled value="Guru Mata Pelajaran" className="w-full p-3 border border-slate-200 bg-slate-100 rounded-xl text-sm font-bold text-slate-500 cursor-not-allowed" />
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Email Akun (Login)</label>
-                    <input disabled value={teacherProfile?.email || currentUserEmail} className="w-full p-3 border border-slate-200 bg-slate-100 rounded-xl text-sm font-bold text-slate-500 cursor-not-allowed" />
-                  </div>
-                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3.5 rounded-xl text-sm font-black shadow-md shadow-emerald-600/30 active:scale-95 transition-all tracking-widest flex justify-center items-center gap-2"><User size={18}/> SIMPAN PERUBAHAN</button>
+
+                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3.5 mt-2 rounded-xl text-sm font-black shadow-md shadow-emerald-600/30 active:scale-95 transition-all tracking-widest flex justify-center items-center gap-2"><User size={18}/> SIMPAN PERUBAHAN NAMA</button>
                 </form>
               </div>
             </div>

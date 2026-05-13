@@ -2,15 +2,17 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { ref, onValue, update, remove, set } from 'firebase/database';
-import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { useAuth } from '../../contexts/AuthContext';
+import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth'; // Tambah signOut
+import { useNavigate } from 'react-router-dom'; // Tambah useNavigate
 import * as XLSX from 'xlsx';
-import { Users, ClipboardList, LogOut, Plus, Trash2, Edit, CheckCircle, XCircle, KeyRound, Menu, X, ShieldCheck, UserCog, BarChart, FileText, Download } from 'lucide-react';
+import { Users, ClipboardList, LogOut, Plus, Trash2, Edit, CheckCircle, XCircle, KeyRound, Menu, X, ShieldCheck, UserCog, BarChart, FileText, Download, Loader2 } from 'lucide-react';
 
 export default function SchoolAdminDashboard() {
-  const { userData, logout } = useAuth();
-  const schoolId = userData?.schoolId || '';
-  const schoolName = userData?.name || 'Admin Sekolah';
+  const navigate = useNavigate();
+  const auth = getAuth();
+  
+  const [adminProfile, setAdminProfile] = useState(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true); // State loading untuk mencegah Akses Ditolak prematur
 
   const [activeTab, setActiveTab] = useState('guru');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -29,6 +31,25 @@ export default function SchoolAdminDashboard() {
   const [recapKelas, setRecapKelas] = useState('');
   const [printMode, setPrintMode] = useState('rekap');
 
+  // 1. Tarik Data Profil Admin TU Terlebih Dahulu
+  useEffect(() => {
+    if (auth.currentUser) {
+      const userRef = ref(db, `users/${auth.currentUser.uid}`);
+      onValue(userRef, (snap) => {
+        if (snap.exists()) {
+          setAdminProfile(snap.val());
+        }
+        setIsLoadingProfile(false);
+      });
+    } else {
+      setIsLoadingProfile(false);
+    }
+  }, [auth.currentUser]);
+
+  const schoolId = adminProfile?.schoolId || '';
+  const schoolName = adminProfile?.name || 'Admin Sekolah';
+
+  // 2. Tarik Data Global Setelah schoolId Didapatkan
   useEffect(() => {
     if (!schoolId) return;
 
@@ -45,13 +66,21 @@ export default function SchoolAdminDashboard() {
     fetchData('leaderboard', 'lead');
   }, [schoolId]);
 
+  // --- FUNGSI LOGOUT INTERNAL ---
+  const handleLogout = () => {
+    signOut(auth).then(() => {
+      localStorage.clear();
+      navigate('/login');
+    }).catch((error) => {
+      alert("Gagal keluar: " + error.message);
+    });
+  };
+
   // --- FILTER LOGIC KHUSUS SEKOLAH INI ---
-  // 1. Ambil semua guru yang schoolId-nya sama dengan admin ini
   const schoolTeachers = data.users.filter(u => u.schoolId === schoolId && u.role === 'teacher');
   const pendingTeachers = schoolTeachers.filter(u => u.status === 'pending');
   const activeTeachers = schoolTeachers.filter(u => u.status !== 'pending');
   
-  // 2. Ambil email guru-guru di sekolah ini untuk memfilter nilai di Leaderboard Root
   const schoolTeacherEmails = schoolTeachers.map(t => t.email);
   const schoolLeaderboard = data.lead.filter(l => schoolTeacherEmails.includes(l.teacherEmail));
 
@@ -70,8 +99,8 @@ export default function SchoolAdminDashboard() {
   const handleAddGuru = async (e) => {
     e.preventDefault();
     try {
-      const auth = getAuth();
-      const userCred = await createUserWithEmailAndPassword(auth, guruForm.email, guruForm.password);
+      const newAuth = getAuth();
+      const userCred = await createUserWithEmailAndPassword(newAuth, guruForm.email, guruForm.password);
       
       await set(ref(db, `users/${userCred.user.uid}`), {
         name: guruForm.name,
@@ -102,7 +131,7 @@ export default function SchoolAdminDashboard() {
   const deleteTeacher = (id) => { if(window.confirm("Hapus akun guru ini dari sekolah?")) remove(ref(db, `users/${id}`)); };
   const handleResetPassword = (email) => {
     if (window.confirm(`Kirim instruksi reset kata sandi ke email: ${email}?`)) {
-      sendPasswordResetEmail(getAuth(), email).then(() => alert("Link Reset Sandi Berhasil Dikirim!")).catch((err) => alert("Gagal: " + err.message));
+      sendPasswordResetEmail(auth, email).then(() => alert("Link Reset Sandi Berhasil Dikirim!")).catch((err) => alert("Gagal: " + err.message));
     }
   };
 
@@ -131,8 +160,25 @@ export default function SchoolAdminDashboard() {
     </div>
   );
 
+  // Mencegah halaman "Akses Ditolak" muncul sebelum Firebase selesai memuat profil
+  if (isLoadingProfile) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+         <Loader2 size={40} className="text-blue-500 animate-spin" />
+         <p className="text-sm font-bold text-slate-500 tracking-widest uppercase animate-pulse">Memverifikasi Instansi...</p>
+      </div>
+    );
+  }
+
   if (!schoolId) {
-    return <div className="h-screen flex items-center justify-center bg-slate-50"><p className="text-xl font-bold text-slate-500">Akses Ditolak: Anda tidak terikat dengan instansi sekolah mana pun.</p></div>;
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
+         <ShieldCheck size={60} className="text-slate-300 mb-4" />
+         <p className="text-xl font-black text-slate-700 mb-2">Akses Ditolak</p>
+         <p className="text-sm font-bold text-slate-500 max-w-md">Akun Anda tidak terikat dengan instansi sekolah mana pun. Silakan hubungi Master Administrator.</p>
+         <button onClick={handleLogout} className="mt-6 bg-slate-800 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md hover:bg-slate-700 transition-colors">Kembali ke Login</button>
+      </div>
+    );
   }
 
   return (
@@ -167,7 +213,12 @@ export default function SchoolAdminDashboard() {
           <NavItem tab="guru" icon={Users} label="Data Guru Sekolah" badge={pendingTeachers.length} />
           <NavItem tab="recap" icon={ClipboardList} label="Rekapitulasi Nilai" />
         </nav>
-        <div className="p-4 border-t border-slate-100"><button onClick={logout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-bold text-sm transition-colors"><LogOut size={16}/> Logout</button></div>
+        <div className="p-4 border-t border-slate-100">
+           {/* TOMBOL KELUAR YANG SUDAH DIJAHIT */}
+           <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-bold text-sm transition-colors">
+               <LogOut size={16}/> Logout
+           </button>
+        </div>
       </aside>
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
