@@ -1,28 +1,36 @@
 // src/pages/teacher/TeacherDashboard.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from '../../config/firebase'; // Menggunakan db root
-import { getAuth, signOut } from 'firebase/auth'; // Tambahkan signOut
-import { useNavigate } from 'react-router-dom'; // Tambahkan useNavigate
+import { db } from '../../config/firebase';
+import { getAuth, signOut, onAuthStateChanged } from 'firebase/auth';
 import { ref as dbRef, onValue, push, remove, update, set } from 'firebase/database';
-import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
-import { Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, Send, FileText, ClipboardList, ShieldAlert, QrCode, ImageIcon, Zap, ShieldCheck, CheckSquare, Check, Percent, Clock, Building2 } from 'lucide-react';
+import { 
+  Users, BookOpen, BarChart, Settings, LogOut, Plus, Trash2, 
+  Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, 
+  Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, 
+  Send, FileText, ClipboardList, ShieldAlert, QrCode, Zap, 
+  ShieldCheck, CheckSquare, Check, Percent, Clock, AlertTriangle, Loader2 
+} from 'lucide-react';
 
 export default function TeacherDashboard() {
-  const APP_VERSION = "2.0.0";
-  const navigate = useNavigate(); // Inisialisasi router
+  const APP_VERSION = "3.0.0 Hybrid";
+  const navigate = useNavigate();
   const auth = getAuth();
-  const { userData } = useAuth();
-  const currentUserEmail = auth.currentUser?.email || userData?.email || 'guru@unknown.com';
-  const isSuperAdmin = currentUserEmail === 'admin@sekolah.com';
+  
+  const [teacherProfile, setTeacherProfile] = useState(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [tempProfileName, setTempProfileName] = useState('');
 
   const [activeTab, setActiveTab] = useState(localStorage.getItem('teacherTab') || 'settings');
   useEffect(() => { localStorage.setItem('teacherTab', activeTab); }, [activeTab]);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [data, setData] = useState({ live: [], bank: [], lead: [], sessions: [] });
+  
+  // Data Global (Termasuk Master Data dari Admin)
+  const [data, setData] = useState({ live: [], bank: [], lead: [], sessions: [], classes: [], subjects: [] });
   const [showModal, setShowModal] = useState(false);
   const [activeMonitorToken, setActiveMonitorToken] = useState(localStorage.getItem('activeMonitorToken') || '');
   
@@ -35,13 +43,11 @@ export default function TeacherDashboard() {
   const [essayQuestions, setEssayQuestions] = useState([]);
   const [essayScores, setEssayScores] = useState({});
 
-  const [teacherProfile, setTeacherProfile] = useState({ name: 'Memuat...', email: currentUserEmail, schoolId: '' });
-  const [tempProfileName, setTempProfileName] = useState(''); 
-  
   const fileInputRef = useRef(null);
 
   // === STATE SESI & BOBOT V3 & WAKTU ===
   const [selectedMapelSesi, setSelectedMapelSesi] = useState('');
+  const [selectedKelasSesi, setSelectedKelasSesi] = useState('');
   const [kuotaPG, setKuotaPG] = useState(0);
   const [kuotaPGK, setKuotaPGK] = useState(0);
   const [kuotaEsai, setKuotaEsai] = useState(0);
@@ -54,6 +60,7 @@ export default function TeacherDashboard() {
   const [showEditSesiModal, setShowEditSesiModal] = useState(false);
   const [editSesiData, setEditSesiData] = useState({ id: '', bobotPG: 70, bobotEsai: 30, jamMulai: '07:30', jamSelesai: '09:00', mapel: '', token: '' });
 
+  // State Rekap & Filter
   const [bankMapel, setBankMapel] = useState('');
   const [bankKelas, setBankKelas] = useState('');
   const [recapMapel, setRecapMapel] = useState('');
@@ -72,24 +79,43 @@ export default function TeacherDashboard() {
   const [editSoalId, setEditSoalId] = useState(null);
   const [previewMode, setPreviewMode] = useState(false);
 
+  // 1. Tarik Data Profil Auth
   useEffect(() => {
-    if(auth.currentUser) {
-      onValue(dbRef(db, `users/${auth.currentUser.uid}`), snap => { 
-        if (snap.exists() && snap.val()?.name) {
-          setTeacherProfile(snap.val());
-          setTempProfileName(snap.val().name);
-        } else {
-          setTeacherProfile({ name: currentUserEmail.split('@')[0], email: currentUserEmail, schoolId: '' });
-          setTempProfileName(currentUserEmail.split('@')[0]);
-        }
-      });
-    }
-    
-    // ROOT PATH DATA FETCHING
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const userRef = dbRef(db, `users/${user.uid}`);
+        onValue(userRef, (snap) => {
+          if (snap.exists()) {
+            const profile = snap.val();
+            setTeacherProfile(profile);
+            setTempProfileName(profile?.name || '');
+          }
+          setIsLoadingProfile(false);
+        });
+      } else {
+        setTeacherProfile(null);
+        setIsLoadingProfile(false);
+      }
+    });
+    return () => unsubscribeAuth();
+  }, [auth]);
+
+  const currentUserEmail = teacherProfile?.email || '';
+  const schoolId = teacherProfile?.schoolId || '';
+  const isSuperAdmin = currentUserEmail === 'admin@sekolah.com';
+
+  // 2. Tarik Data Global (Anti Blank Putih)
+  useEffect(() => {
+    if (!currentUserEmail) return;
+
     const fetchData = (path, key) => onValue(dbRef(db, path), snap => {
       const val = snap.val();
       if (val && typeof val === 'object') {
-        setData(prev => ({ ...prev, [key]: Object.keys(val).map(k => ({ ...val[k], id: k })) }));
+        const parsedData = Object.keys(val).map(k => {
+           if(val[k]) return { ...val[k], id: k };
+           return null;
+        }).filter(Boolean);
+        setData(prev => ({ ...prev, [key]: parsedData }));
       } else {
         setData(prev => ({ ...prev, [key]: [] }));
       }
@@ -99,7 +125,9 @@ export default function TeacherDashboard() {
     fetchData('bank_soal', 'bank'); 
     fetchData('leaderboard', 'lead'); 
     fetchData('exam_sessions', 'sessions');
-  }, [currentUserEmail, auth.currentUser]);
+    fetchData('master_classes', 'classes');
+    fetchData('master_subjects', 'subjects');
+  }, [currentUserEmail]);
 
   // --- FUNGSI LOGOUT INTERNAL ---
   const handleLogout = () => {
@@ -111,24 +139,35 @@ export default function TeacherDashboard() {
     });
   };
 
-  const myQuestions = (data.bank || []).filter(q => q?.teacherEmail === currentUserEmail);
-  const mySessions = (data.sessions || []).filter(s => s?.teacherEmail === currentUserEmail).sort((a,b) => b.timestamp - a.timestamp);
-  const myLeaderboard = (data.lead || []).filter(s => s?.teacherEmail === currentUserEmail).sort((a,b) => (Number(b?.score) || 0) - (Number(a?.score) || 0));
-  const monitoredStudents = (data.live || []).filter(s => s?.token === activeMonitorToken);
+  // --- FILTERING DATA BERDASARKAN GURU & SEKOLAH ---
+  const safeLive = Array.isArray(data.live) ? data.live : [];
+  const safeBank = Array.isArray(data.bank) ? data.bank : [];
+  const safeLead = Array.isArray(data.lead) ? data.lead : [];
+  const safeSessions = Array.isArray(data.sessions) ? data.sessions : [];
+  const safeClasses = Array.isArray(data.classes) ? data.classes : [];
+  const safeSubjects = Array.isArray(data.subjects) ? data.subjects : [];
 
-  const availableMapel = [...new Set(myQuestions.map(q => q?.mapel).filter(Boolean))];
-  const availableKelasSesi = [...new Set(myQuestions.filter(q => q?.mapel === selectedMapelSesi).map(q => q?.kelas).filter(Boolean))];
+  const myQuestions = safeBank.filter(q => q?.teacherEmail === currentUserEmail);
+  const mySessions = safeSessions.filter(s => s?.teacherEmail === currentUserEmail).sort((a,b) => (b?.timestamp || 0) - (a?.timestamp || 0));
+  const myLeaderboard = safeLead.filter(s => s?.teacherEmail === currentUserEmail).sort((a,b) => (Number(b?.score) || 0) - (Number(a?.score) || 0));
+  const monitoredStudents = safeLive.filter(s => s?.token === activeMonitorToken);
 
+  // MENGGUNAKAN MASTER DATA DARI ADMIN SEKOLAH
+  const schoolClasses = safeClasses.filter(c => c?.schoolId === schoolId);
+  const schoolSubjects = safeSubjects.filter(s => s?.schoolId === schoolId);
+
+  // Filter untuk Bank Soal (berdasarkan soal yang sudah pernah dibuat)
   const availableBankMapel = [...new Set(myQuestions.map(q => q?.mapel).filter(Boolean))];
   const availableBankKelas = [...new Set(myQuestions.map(q => q?.kelas).filter(Boolean))];
   const filteredQuestions = myQuestions.filter(q => (bankMapel === '' || q?.mapel === bankMapel) && (bankKelas === '' || q?.kelas === bankKelas));
 
+  // Filter untuk Rekap Nilai
   const availableRecapMapel = [...new Set(myLeaderboard.map(s => s?.mapel).filter(Boolean))];
   const availableRecapKelas = [...new Set(myLeaderboard.map(s => s?.class).filter(Boolean))];
   const availableRecapTokens = [...new Set(myLeaderboard.map(s => s?.token).filter(Boolean))];
-  
   const filteredLeaderboard = myLeaderboard.filter(s => (recapMapel === '' || s?.mapel === recapMapel) && (recapKelas === '' || s?.class === recapKelas) && (recapToken === '' || s?.token === recapToken));
 
+  // --- EKSEKUSI GURU ---
   const triggerGlobalUpdate = () => {
     if(!isSuperAdmin) return;
     if(window.confirm(`🚀 KONFIRMASI RILIS V2\nApakah Anda yakin ingin memaksa SEMUA HP SISWA beralih ke versi ${APP_VERSION}?`)) {
@@ -162,16 +201,12 @@ export default function TeacherDashboard() {
 
   const handleDeleteMyRecap = async () => {
     if (myLeaderboard.length === 0) return alert("Belum ada data nilai.");
-    
     const konfirmasi = window.prompt("🚨 PERINGATAN BAHAYA!\nTindakan ini akan MENGHAPUS PERMANEN SEMUA NILAI mapel Anda.\n\nKetik kata 'HAPUS' (huruf besar semua) di bawah ini untuk melanjutkan:");
-    
     if (konfirmasi === "HAPUS") {
       try { 
         await Promise.all(myLeaderboard.map(s => remove(dbRef(db, `leaderboard/${s.id}`)))); 
         alert("Data berhasil dibersihkan."); 
-      } catch (error) { 
-        alert("Gagal: " + error.message); 
-      }
+      } catch (error) { alert("Gagal: " + error.message); }
     } else if (konfirmasi !== null) {
       alert("❌ Dibatalkan: Kata konfirmasi salah.");
     }
@@ -183,9 +218,9 @@ export default function TeacherDashboard() {
     }
   };
 
+  // --- KOREKSI ESAI ---
   const openKoreksiModal = (session) => {
     setKoreksiSession(session);
-    
     const eQs = myQuestions.filter(q => q.mapel === session.mapel && q.kelas === session.kelas && q.jenisSoal === 'ESAI');
     setEssayQuestions(eQs);
 
@@ -197,7 +232,6 @@ export default function TeacherDashboard() {
        if(s.essayScores) { Object.assign(initScores, s.essayScores); }
     });
     setEssayScores(initScores);
-    
     setShowKoreksiModal(true);
   };
 
@@ -238,6 +272,7 @@ export default function TeacherDashboard() {
     }
   };
 
+  // --- BANK SOAL ---
   const handlePGKKeyToggle = (opt) => {
     let currentKeys = formData.kunci ? formData.kunci.split(',') : [];
     if (currentKeys.includes(opt)) currentKeys = currentKeys.filter(k => k !== opt);
@@ -251,9 +286,17 @@ export default function TeacherDashboard() {
     if(finalData.jenisSoal === 'ESAI') {
         finalData.opsiA = ''; finalData.opsiB = ''; finalData.opsiC = ''; finalData.opsiD = ''; finalData.kunci = '';
     }
-    if (editSoalId) { update(dbRef(db, `bank_soal/${editSoalId}`), finalData); alert("Soal diperbarui!"); } 
-    else { push(dbRef(db, 'bank_soal'), { ...finalData, teacherEmail: currentUserEmail }); alert("Soal ditambahkan!"); }
-    setShowModal(false); setEditSoalId(null); setFormData(defaultForm); setPreviewMode(false);
+    if (editSoalId) { 
+        update(dbRef(db, `bank_soal/${editSoalId}`), finalData); 
+        alert("Soal diperbarui!"); 
+    } else { 
+        push(dbRef(db, 'bank_soal'), { ...finalData, teacherEmail: currentUserEmail }); 
+        alert("Soal ditambahkan!"); 
+    }
+    setShowModal(false); 
+    setEditSoalId(null); 
+    setFormData(defaultForm); 
+    setPreviewMode(false);
   };
 
   const openEditModal = (q) => { 
@@ -262,15 +305,17 @@ export default function TeacherDashboard() {
       mapel: q.mapel||'', kelas: q.kelas||'', pertanyaan: q.pertanyaan||' ', gambar: q.gambar || '', 
       opsiA: q.opsiA||' ', opsiB: q.opsiB||' ', opsiC: q.opsiC||' ', opsiD: q.opsiD||' ', kunci: q.kunci||'A' 
     }); 
-    setEditSoalId(q.id); setShowModal(true); setPreviewMode(false);
+    setEditSoalId(q.id); 
+    setShowModal(true); 
+    setPreviewMode(false);
   };
   
   const downloadTemplate = () => { 
     try {
       const wsData = [
-        { No: 1, Kode_Wacana: "", Jenis_Soal: "PG", Teks_Wacana: "", mapel: "Matematika", kelas: "9", pertanyaan: "Jika $x^2 = 4$, maka $x$ adalah?", opsiA: "2", opsiB: "3", opsiC: "4", opsiD: "5", Kunci_Jawaban: "A" },
-        { No: 2, Kode_Wacana: "", Jenis_Soal: "PGK", Teks_Wacana: "", mapel: "Matematika", kelas: "9", pertanyaan: "Manakah bilangan genap?", opsiA: "2", opsiB: "3", opsiC: "4", opsiD: "5", Kunci_Jawaban: "A,C" },
-        { No: 3, Kode_Wacana: "W-01", Jenis_Soal: "ESAI", Teks_Wacana: "Proses hujan terjadi karena...", mapel: "Matematika", kelas: "9", pertanyaan: "Jelaskan proses kondensasi!", opsiA: "", opsiB: "", opsiC: "", opsiD: "", Kunci_Jawaban: "" }
+        { No: 1, Kode_Wacana: "", Jenis_Soal: "PG", Teks_Wacana: "", mapel: "Matematika", kelas: "10", pertanyaan: "Jika $x^2 = 4$, maka $x$ adalah?", opsiA: "2", opsiB: "3", opsiC: "4", opsiD: "5", Kunci_Jawaban: "A" },
+        { No: 2, Kode_Wacana: "", Jenis_Soal: "PGK", Teks_Wacana: "", mapel: "Matematika", kelas: "10", pertanyaan: "Manakah bilangan genap?", opsiA: "2", opsiB: "3", opsiC: "4", opsiD: "5", Kunci_Jawaban: "A,C" },
+        { No: 3, Kode_Wacana: "W-01", Jenis_Soal: "ESAI", Teks_Wacana: "Proses hujan terjadi karena...", mapel: "Matematika", kelas: "10", pertanyaan: "Jelaskan proses kondensasi!", opsiA: "", opsiB: "", opsiC: "", opsiD: "", Kunci_Jawaban: "" }
       ];
       const ws = XLSX.utils.json_to_sheet(wsData);
       const wb = XLSX.utils.book_new();
@@ -280,9 +325,11 @@ export default function TeacherDashboard() {
   };
   
   const triggerImport = () => { if(fileInputRef.current) fileInputRef.current.click(); };
+  
   const handleFileUpload = (e) => { 
     try { 
-      const file = e.target.files[0]; if (!file) return; 
+      const file = e.target.files[0]; 
+      if (!file) return; 
       const reader = new FileReader(); 
       reader.onload = (evt) => { 
         const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); 
@@ -307,19 +354,19 @@ export default function TeacherDashboard() {
     } catch(err) { alert("Gagal: " + err.message); } 
   };
   
+  // --- SESI UJIAN ---
   const handleCreateSession = (e) => { 
     e.preventDefault(); 
     const t = document.getElementById('token_input').value; 
-    const k = document.getElementById('kelas_session').value; 
     const sk = document.getElementById('subkelas_session').value.toUpperCase(); 
-    if(!t || !selectedMapelSesi || !k || !sk) return alert("Lengkapi data sesi!"); 
+    if(!t || !selectedMapelSesi || !selectedKelasSesi || !sk) return alert("Lengkapi data sesi!"); 
 
     const bPG = parseInt(bobotPG) || 0;
     const bEsai = parseInt(bobotEsai) || 0;
     if (bPG + bEsai !== 100) return alert("Peringatan: Total Bobot PG dan Esai harus tepat 100%!");
     
     push(dbRef(db, 'exam_sessions'), { 
-      token: t, mapel: selectedMapelSesi, kelas: k, subKelas: sk, status: 'open', 
+      token: t, mapel: selectedMapelSesi, kelas: selectedKelasSesi, subKelas: sk, status: 'open', 
       kuotaPG: parseInt(kuotaPG) || 0, kuotaPGK: parseInt(kuotaPGK) || 0, kuotaEsai: parseInt(kuotaEsai) || 0,
       bobotPG: bPG, bobotEsai: bEsai, jamMulai: jamMulai, jamSelesai: jamSelesai,
       teacherEmail: currentUserEmail, timestamp: Date.now() 
@@ -393,15 +440,51 @@ export default function TeacherDashboard() {
     }
   };
 
-  const NavItem = ({ tab, icon: Icon, label }) => (<button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-3.5 rounded-xl transition-all ${activeTab === tab ? 'bg-emerald-600 text-white font-black shadow-md shadow-emerald-600/30' : 'text-slate-500 hover:bg-slate-100 font-bold'}`}><Icon size={18}/> <span className="text-sm">{label}</span></button>);
+  const NavItem = ({ tab, icon: Icon, label }) => (
+    <button onClick={() => { setActiveTab(tab); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-3.5 rounded-xl transition-all ${activeTab === tab ? 'bg-emerald-600 text-white font-black shadow-md shadow-emerald-600/30' : 'text-slate-500 hover:bg-slate-100 font-bold'}`}>
+      <Icon size={18}/> <span className="text-sm">{label}</span>
+    </button>
+  );
 
   const OfficialHeader = () => (
     <div className="hidden print:block text-center mb-8 border-b-4 border-double border-black pb-4">
-      <h1 className="text-2xl font-black uppercase tracking-widest text-black">YASPENDIK PTP NUSANTARA IV</h1>
-      <h2 className="text-xl font-black uppercase tracking-widest text-black mt-1">SMP/MTS DARMA PERTIWI BAH BUTONG</h2>
+      <h1 className="text-2xl font-black uppercase tracking-widest text-black">ADMINISTRASI UJIAN</h1>
+      <h2 className="text-xl font-black uppercase tracking-widest text-black mt-1">ID INSTANSI: {schoolId || 'TIDAK TERDAFTAR'}</h2>
       <p className="mt-2 text-sm font-bold text-gray-800">Dokumen Resmi Administrasi Ujian Berbasis Komputer (CBT)</p>
     </div>
   );
+
+  // --- LOADING DAN PENDING SCREEN ---
+  if (isLoadingProfile) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+         <Loader2 size={40} className="text-emerald-500 animate-spin" />
+         <p className="text-sm font-bold text-slate-500 tracking-widest uppercase animate-pulse">Memverifikasi Data Guru...</p>
+      </div>
+    );
+  }
+
+  if (!teacherProfile) {
+     return (
+       <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
+          <AlertTriangle size={60} className="text-red-500 mb-4" />
+          <p className="text-xl font-black text-slate-700 mb-2">Sesi Terputus</p>
+          <p className="text-sm font-bold text-slate-500 max-w-md mb-6">Silakan login kembali.</p>
+          <button onClick={() => navigate('/login')} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold text-sm">Kembali ke Login</button>
+       </div>
+     );
+  }
+
+  if (teacherProfile.status === 'pending') {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
+         <Clock size={60} className="text-amber-500 mb-4" />
+         <p className="text-2xl font-black text-slate-700 mb-2">Menunggu Persetujuan</p>
+         <p className="text-sm font-bold text-slate-500 max-w-md mb-6">Akun Anda sedang ditinjau oleh Admin Tata Usaha sekolah. Silakan hubungi admin sekolah Anda agar akun ini segera diaktifkan.</p>
+         <button onClick={handleLogout} className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold text-sm">Keluar</button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-[#f8fafc] overflow-hidden font-sans">
@@ -425,11 +508,14 @@ export default function TeacherDashboard() {
       {isMobileMenuOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />}
       
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 shadow-2xl md:shadow-none`}>
-        <div className="p-5 border-b border-slate-100 flex justify-between items-center"><h1 className="text-lg font-black text-emerald-700 flex gap-2 items-center tracking-tight"><GraduationCap size={24} className="text-emerald-500"/> CBT DARMA</h1><button className="md:hidden text-slate-400" onClick={() => setIsMobileMenuOpen(false)}><X size={20}/></button></div>
+        <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+            <h1 className="text-lg font-black text-emerald-700 flex gap-2 items-center tracking-tight"><GraduationCap size={24} className="text-emerald-500"/> CBT GURU</h1>
+            <button className="md:hidden text-slate-400" onClick={() => setIsMobileMenuOpen(false)}><X size={20}/></button>
+        </div>
         <div className="p-4 mx-3 mt-3 mb-1 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-xl uppercase shadow-inner shrink-0">{teacherProfile?.name?.charAt(0) || 'G'}</div>
           <div className="min-w-0">
-            <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-0.5">{teacherProfile?.schoolId ? `Instansi: ${teacherProfile.schoolId}` : `VERSI ${APP_VERSION}`}</p>
+            <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-0.5">{schoolId ? `INST: ${schoolId}` : `VERSI ${APP_VERSION}`}</p>
             <p className="text-xs font-bold truncate text-slate-800">{teacherProfile?.name}</p>
           </div>
         </div>
@@ -447,10 +533,9 @@ export default function TeacherDashboard() {
           </div>
         )}
         <div className="p-4 border-t border-slate-100">
-           {/* INI TOMBOL KELUAR YANG SUDAH DIJAHIT */}
-           <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 rounded-xl font-bold text-sm transition-colors shadow-sm">
-               <LogOut size={16}/> Keluar Akun
-           </button>
+            <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 rounded-xl font-bold text-sm transition-colors shadow-sm">
+                <LogOut size={16}/> Keluar Akun
+            </button>
         </div>
       </aside>
       
@@ -461,7 +546,8 @@ export default function TeacherDashboard() {
             <h2 className="text-lg lg:text-xl font-black text-slate-800 hidden sm:flex items-center gap-2 tracking-wide">Teacher Center <span className="bg-slate-100 text-slate-500 text-[9px] px-1.5 py-0.5 rounded uppercase font-black">V2.1 STABLE</span></h2>
           </div>
           <div className="flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
-            <ShieldCheck size={14} className="text-emerald-500" /><span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Sistem Stabil</span>
+            <ShieldCheck size={14} className="text-emerald-500" />
+            <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Sistem Stabil</span>
           </div>
         </header>
         
@@ -474,11 +560,20 @@ export default function TeacherDashboard() {
                 <h3 className="text-lg font-black mb-5 text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-3"><Plus className="text-emerald-500" size={20}/> Buka Sesi Baru</h3>
                 <form onSubmit={handleCreateSession} className="space-y-4">
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Mata Pelajaran</label>
-                    <select value={selectedMapelSesi} onChange={(e) => setSelectedMapelSesi(e.target.value)} required className="w-full p-3 border border-slate-200 bg-slate-50 rounded-xl outline-none text-sm font-bold text-slate-700 focus:border-emerald-500"><option value="">-- Daftar Mapel --</option>{availableMapel.map(m => <option key={m}>{m}</option>)}</select>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Mata Pelajaran (Sesuai Data Sekolah)</label>
+                    <select value={selectedMapelSesi} onChange={(e) => setSelectedMapelSesi(e.target.value)} required className="w-full p-3 border border-slate-200 bg-slate-50 rounded-xl outline-none text-sm font-bold text-slate-700 focus:border-emerald-500">
+                        <option value="">-- Pilih Mapel --</option>
+                        {schoolSubjects.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                    </select>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                     <div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Tingkat</label><select id="kelas_session" required disabled={!selectedMapelSesi} className="w-full p-3 border border-slate-200 bg-slate-50 rounded-xl outline-none text-sm font-bold text-slate-700"><option value="">Pilih</option>{availableKelasSesi.map(k => <option key={k}>{k}</option>)}</select></div>
+                     <div>
+                         <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Tingkat</label>
+                         <select value={selectedKelasSesi} onChange={(e) => setSelectedKelasSesi(e.target.value)} required className="w-full p-3 border border-slate-200 bg-slate-50 rounded-xl outline-none text-sm font-bold text-slate-700">
+                             <option value="">Pilih Kelas</option>
+                             {schoolClasses.map(k => <option key={k.id} value={k.name}>{k.name}</option>)}
+                         </select>
+                     </div>
                      <div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Ruang/Sub</label><input id="subkelas_session" placeholder="Cth: A" required className="w-full p-3 border border-slate-200 bg-slate-50 rounded-xl uppercase text-sm font-bold text-center outline-none focus:border-emerald-500" /></div>
                   </div>
                   
@@ -555,12 +650,15 @@ export default function TeacherDashboard() {
             </div>
           )}
 
-          {/* TAB MONITOR */}
+          {/* TAB MONITOR LIVE */}
           {activeTab === 'proctor' && (
             <div className="space-y-5 max-w-7xl mx-auto">
               <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
                 <div className="flex items-center gap-2 font-black text-slate-800 text-lg"><Monitor className="text-emerald-500" size={22}/> Live Proctoring</div>
-                <select value={activeMonitorToken} onChange={(e) => setMonitor(e.target.value)} className="w-full sm:w-auto p-3 rounded-xl border border-slate-200 outline-none text-sm font-bold text-slate-700 bg-slate-50 cursor-pointer shadow-sm focus:border-emerald-500"><option value="">-- Pilih Sesi Token --</option>{mySessions.map(s => <option key={s.token} value={s.token}>{s.token} ({s.kelas}-{s.subKelas})</option>)}</select>
+                <select value={activeMonitorToken} onChange={(e) => setMonitor(e.target.value)} className="w-full sm:w-auto p-3 rounded-xl border border-slate-200 outline-none text-sm font-bold text-slate-700 bg-slate-50 cursor-pointer shadow-sm focus:border-emerald-500">
+                    <option value="">-- Pilih Sesi Token --</option>
+                    {mySessions.map(s => <option key={s.token} value={s.token}>{s.token} ({s.kelas}-{s.subKelas})</option>)}
+                </select>
               </div>
 
               {!activeMonitorToken ? (
@@ -631,8 +729,14 @@ export default function TeacherDashboard() {
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <select value={bankMapel} onChange={e => setBankMapel(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"><option value="">-- Semua Mata Pelajaran --</option>{availableBankMapel.map(m => <option key={m}>{m}</option>)}</select>
-                  <select value={bankKelas} onChange={e => setBankKelas(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"><option value="">-- Semua Tingkatan Kelas --</option>{availableBankKelas.map(k => <option key={k}>{k}</option>)}</select>
+                  <select value={bankMapel} onChange={e => setBankMapel(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500">
+                      <option value="">-- Semua Mata Pelajaran --</option>
+                      {availableBankMapel.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <select value={bankKelas} onChange={e => setBankKelas(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500">
+                      <option value="">-- Semua Tingkatan Kelas --</option>
+                      {availableBankKelas.map(k => <option key={k} value={k}>{k}</option>)}
+                  </select>
                 </div>
               </div>
 
@@ -697,9 +801,18 @@ export default function TeacherDashboard() {
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <select value={recapMapel} onChange={e => setRecapMapel(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none text-sm font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Mapel --</option>{availableRecapMapel.map(m => <option key={m}>{m}</option>)}</select>
-                  <select value={recapKelas} onChange={e => setRecapKelas(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none text-sm font-bold text-slate-700 cursor-pointer focus:border-emerald-500"><option value="">-- Semua Tingkatan --</option>{availableRecapKelas.map(k => <option key={k}>{k}</option>)}</select>
-                  <select value={recapToken} onChange={e => setRecapToken(e.target.value)} className="w-full p-3 border border-emerald-200 rounded-xl bg-emerald-50 outline-none text-sm font-bold text-emerald-800 cursor-pointer focus:border-emerald-500"><option value="">-- Pilih Sesi (Token) --</option>{availableRecapTokens.map(t => <option key={t}>{t}</option>)}</select>
+                  <select value={recapMapel} onChange={e => setRecapMapel(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none text-sm font-bold text-slate-700 cursor-pointer focus:border-emerald-500">
+                      <option value="">-- Semua Mapel --</option>
+                      {availableRecapMapel.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <select value={recapKelas} onChange={e => setRecapKelas(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none text-sm font-bold text-slate-700 cursor-pointer focus:border-emerald-500">
+                      <option value="">-- Semua Tingkatan --</option>
+                      {availableRecapKelas.map(k => <option key={k} value={k}>{k}</option>)}
+                  </select>
+                  <select value={recapToken} onChange={e => setRecapToken(e.target.value)} className="w-full p-3 border border-emerald-200 rounded-xl bg-emerald-50 outline-none text-sm font-bold text-emerald-800 cursor-pointer focus:border-emerald-500">
+                      <option value="">-- Pilih Sesi (Token) --</option>
+                      {availableRecapTokens.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-slate-100">
@@ -718,19 +831,28 @@ export default function TeacherDashboard() {
                   <tbody>
                     {filteredLeaderboard.map((s, i) => (
                       <tr key={s?.id || i}>
-                        <td className="py-2 px-3 text-center">{i+1}</td><td className="py-2 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td><td className="py-2 px-3">{s?.mapel || '-'}</td><td className="py-2 px-3 text-center">{s?.class}-{s?.subKelas}</td><td className="py-2 px-3 text-center font-black">{s?.score || 0}</td>
+                        <td className="py-2 px-3 text-center">{i+1}</td>
+                        <td className="py-2 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td>
+                        <td className="py-2 px-3">{s?.mapel || '-'}</td>
+                        <td className="py-2 px-3 text-center">{s?.class}-{s?.subKelas}</td>
+                        <td className="py-2 px-3 text-center font-black">{s?.score || 0}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <div className="flex justify-end mt-12 text-center"><div className="w-64"><p>Simalungun, {new Date().toLocaleDateString('id-ID')}<br/>Guru Bidang Studi,</p><br/><br/><br/><p className="font-bold underline uppercase">{teacherProfile?.name}</p></div></div>
+                <div className="flex justify-end mt-12 text-center">
+                   <div className="w-64">
+                      <p>Simalungun, {new Date().toLocaleDateString('id-ID')}<br/>Guru Bidang Studi,</p><br/><br/><br/>
+                      <p className="font-bold underline uppercase">{teacherProfile?.name}</p>
+                   </div>
+                </div>
               </div>
 
               <div className={`${printMode === 'berita_acara' ? 'hidden print:block' : 'hidden'}`}>
                 <OfficialHeader />
                 <h3 className="text-center font-black text-lg mb-8 underline tracking-wide">BERITA ACARA PELAKSANAAN UJIAN CBT</h3>
                 <div className="text-justify leading-loose font-medium text-sm">
-                  <p>Pada hari ini _________ tanggal ____ bulan ________________ tahun 20___, di SMP/MTS Darma Pertiwi Bah Butong telah diselenggarakan Ujian Berbasis Komputer (CBT) untuk:</p>
+                  <p>Pada hari ini _________ tanggal ____ bulan ________________ tahun 20___, telah diselenggarakan Ujian Berbasis Komputer (CBT) untuk:</p>
                   <table className="w-full my-4 border-none !border-0">
                     <tbody className="border-none">
                       <tr className="border-none"><td className="w-48 py-1 border-none !p-0">Mata Pelajaran</td><td className="border-none !p-0">: {recapMapel || '_________________________'}</td></tr>
@@ -745,8 +867,16 @@ export default function TeacherDashboard() {
                   <p>Demikian berita acara ini dibuat dengan sesungguhnya untuk dapat dipergunakan sebagaimana mestinya.</p>
                 </div>
                 <div className="flex justify-between mt-12 text-center">
-                  <div className="w-64"><p>Pengawas Ruangan,</p><br/><br/><br/><p className="font-bold uppercase border-b border-black pb-1">_________________________</p><p className="text-xs">NIP. </p></div>
-                  <div className="w-64"><p>Guru Mata Pelajaran,</p><br/><br/><br/><p className="font-bold uppercase border-b border-black pb-1">{teacherProfile?.name}</p><p className="text-xs">NIP. </p></div>
+                  <div className="w-64">
+                     <p>Pengawas Ruangan,</p><br/><br/><br/>
+                     <p className="font-bold uppercase border-b border-black pb-1">_________________________</p>
+                     <p className="text-xs">NIP. </p>
+                  </div>
+                  <div className="w-64">
+                     <p>Guru Mata Pelajaran,</p><br/><br/><br/>
+                     <p className="font-bold uppercase border-b border-black pb-1">{teacherProfile?.name}</p>
+                     <p className="text-xs">NIP. </p>
+                  </div>
                 </div>
               </div>
 
@@ -758,7 +888,12 @@ export default function TeacherDashboard() {
                   <thead><tr><th className="py-3 px-3 w-12 text-center">No</th><th className="py-3 px-3">Nama Lengkap Siswa</th><th className="py-3 px-3 text-center w-24">Kelas</th><th className="py-3 px-3 w-48 text-center">Tanda Tangan</th></tr></thead>
                   <tbody>
                     {filteredLeaderboard.map((s, i) => (
-                      <tr key={s?.id || i}><td className="py-3 px-3 text-center">{i+1}</td><td className="py-3 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td><td className="py-3 px-3 text-center">{s?.class}-{s?.subKelas}</td><td className="py-3 px-3"><span className="text-xs text-gray-400">{i+1}. </span></td></tr>
+                      <tr key={s?.id || i}>
+                         <td className="py-3 px-3 text-center">{i+1}</td>
+                         <td className="py-3 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td>
+                         <td className="py-3 px-3 text-center">{s?.class}-{s?.subKelas}</td>
+                         <td className="py-3 px-3"><span className="text-xs text-gray-400">{i+1}. </span></td>
+                      </tr>
                     ))}
                     {[...Array(Math.max(0, 15 - filteredLeaderboard.length))].map((_, i) => (
                       <tr key={`empty-${i}`}><td className="py-4"></td><td></td><td></td><td></td></tr>
@@ -767,7 +902,7 @@ export default function TeacherDashboard() {
                 </table>
               </div>
               
-              {/* === TAMPILAN UI TABEL NILAI GURU (SEBELUM DI PRINT) === */}
+              {/* === TAMPILAN UI TABEL NILAI GURU BROWSER === */}
               <div className="print:hidden">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-3 rounded-t-xl border border-b-0 border-slate-200 gap-3">
                   <div className="text-xs font-bold text-slate-500">
@@ -848,10 +983,9 @@ export default function TeacherDashboard() {
                       <input disabled value={teacherProfile?.email || currentUserEmail} className="w-full p-3 border border-slate-200 bg-slate-100 rounded-xl text-sm font-bold text-slate-500 cursor-not-allowed" />
                     </div>
                     
-                    {/* BAGIAN INFORMASI SEKOLAH DAN TUGAS */}
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest flex items-center gap-1"><Building2 size={12}/> Instansi Sekolah</label>
-                      <input disabled value={teacherProfile?.schoolId?.toUpperCase() || 'BELUM TERDAFTAR'} className="w-full p-3 border border-emerald-200 bg-emerald-50 rounded-xl text-sm font-black text-emerald-700 cursor-not-allowed uppercase" />
+                      <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Instansi Sekolah</label>
+                      <input disabled value={schoolId?.toUpperCase() || 'BELUM TERDAFTAR'} className="w-full p-3 border border-emerald-200 bg-emerald-50 rounded-xl text-sm font-black text-emerald-700 cursor-not-allowed uppercase" />
                       <p className="text-[9px] text-slate-400 mt-1.5 font-medium">*Instansi diatur oleh Admin Sekolah.</p>
                     </div>
                     <div>
@@ -1056,8 +1190,20 @@ export default function TeacherDashboard() {
                         <option value="ESAI">Soal Esai</option>
                      </select>
                   </div>
-                  <div><label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Mata Pelajaran</label><input required value={formData.mapel} placeholder="Cth: IPA" className="w-full p-2.5 border border-slate-200 rounded-lg text-xs font-bold" onChange={e => setFormData({...formData, mapel: e.target.value})} /></div>
-                  <div><label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Tingkat / Kelas</label><input required value={formData.kelas} placeholder="Cth: 9" className="w-full p-2.5 border border-slate-200 rounded-lg text-xs font-bold text-center" onChange={e => setFormData({...formData, kelas: e.target.value})} /></div>
+                  <div>
+                      <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Mata Pelajaran</label>
+                      <select required value={formData.mapel} onChange={e => setFormData({...formData, mapel: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-lg text-xs font-bold bg-white">
+                         <option value="">Pilih Mapel...</option>
+                         {schoolSubjects.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                      </select>
+                  </div>
+                  <div>
+                      <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Tingkat / Kelas</label>
+                      <select required value={formData.kelas} onChange={e => setFormData({...formData, kelas: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-lg text-xs font-bold text-center bg-white">
+                         <option value="">Pilih Kelas...</option>
+                         {schoolClasses.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      </select>
+                  </div>
                 </div>
 
                 <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl space-y-2">
