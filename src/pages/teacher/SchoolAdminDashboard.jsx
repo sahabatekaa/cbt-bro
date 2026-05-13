@@ -1,29 +1,43 @@
 // src/pages/teacher/SchoolAdminDashboard.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../../config/firebase';
-import { ref, onValue, update, remove, set } from 'firebase/database';
+import { ref, onValue, update, remove, set, push } from 'firebase/database';
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged } from 'firebase/auth'; 
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import { Users, ClipboardList, LogOut, Plus, Trash2, Edit, CheckCircle, XCircle, KeyRound, Menu, X, ShieldCheck, UserCog, BarChart, FileText, Download, Loader2, AlertTriangle } from 'lucide-react';
+import { Users, ClipboardList, LogOut, Plus, Trash2, Edit, CheckCircle, XCircle, KeyRound, Menu, X, ShieldCheck, UserCog, BarChart, FileText, Download, Loader2, AlertTriangle, LayoutDashboard, Building2, MapPin, Briefcase, Phone, Crown, GraduationCap, Database, BookOpen, Radio, Upload, Image as ImageIcon } from 'lucide-react';
 
 export default function SchoolAdminDashboard() {
   const navigate = useNavigate();
   const auth = getAuth();
+  const fileInputRef = useRef(null);
   
   const [adminProfile, setAdminProfile] = useState(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true); 
 
-  const [activeTab, setActiveTab] = useState('guru');
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  const [data, setData] = useState({ users: [], lead: [] });
+  // Data Global
+  const [data, setData] = useState({ users: [], lead: [], students: [], classes: [], subjects: [], sessions: [] });
+  const [schoolInfo, setSchoolInfo] = useState({});
   
+  // Form Profil Sekolah (+ Logo)
+  const [schoolForm, setSchoolForm] = useState({ alamat: '', kepalaSekolah: '', nipKepalaSekolah: '', telepon: '', logoUrl: '' });
+
   // States Modal Guru
   const [showAddGuruModal, setShowAddGuruModal] = useState(false);
   const [showEditGuruModal, setShowEditGuruModal] = useState(false);
   const [editGuruId, setEditGuruId] = useState(null);
   const [guruForm, setGuruForm] = useState({ name: '', email: '', password: '' });
+
+  // States Modal Siswa
+  const [showAddStudentModal, setShowAddStudentModal] = useState(false);
+  const [studentForm, setStudentForm] = useState({ name: '', nisn: '', kelas: '', subKelas: '' });
+
+  // States Master Data
+  const [classForm, setClassForm] = useState('');
+  const [subjectForm, setSubjectForm] = useState('');
 
   // States Filter Rekap
   const [recapGuru, setRecapGuru] = useState('');
@@ -37,29 +51,23 @@ export default function SchoolAdminDashboard() {
       if (user) {
         const userRef = ref(db, `users/${user.uid}`);
         onValue(userRef, (snap) => {
-          if (snap.exists()) {
-            setAdminProfile(snap.val());
-          }
+          if (snap.exists()) setAdminProfile(snap.val());
           setIsLoadingProfile(false);
         });
       } else {
+        setAdminProfile(null);
         setIsLoadingProfile(false);
-        // Lempar jika ternyata tidak ada user (mencegah akses direct URL)
-        navigate('/login');
       }
     });
-
     return () => unsubscribeAuth();
-  }, [auth, navigate]);
+  }, [auth]);
 
-  // JIKA schoolId kosong (misal karena error saat daftar), kita beri nilai fallback 'UNREGISTERED'
-  // Ini mencegah aplikasi "menendang" user, sambil memberi tahu user bahwa akunnya belum terkait dengan sekolah mana pun.
   const schoolId = adminProfile?.schoolId || 'UNREGISTERED';
-  const schoolName = adminProfile?.name || 'Admin Sekolah';
+  const adminName = adminProfile?.name || 'Admin Sekolah';
 
-  // 2. Tarik Data Global
+  // 2. Tarik Data Global Terpadu
   useEffect(() => {
-    if (schoolId === 'UNREGISTERED') return; // Jangan tarik data jika belum terdaftar
+    if (schoolId === 'UNREGISTERED') return; 
 
     const fetchData = (path, key) => onValue(ref(db, path), snap => {
       const val = snap.val();
@@ -72,6 +80,28 @@ export default function SchoolAdminDashboard() {
 
     fetchData('users', 'users');
     fetchData('leaderboard', 'lead');
+    fetchData('students', 'students');
+    fetchData('master_classes', 'classes');
+    fetchData('master_subjects', 'subjects');
+    fetchData('exam_sessions', 'sessions');
+
+    // Tarik Profil Sekolah (Dari Master Client)
+    const schoolRef = ref(db, `clients/${schoolId}`);
+    const unsubSchool = onValue(schoolRef, snap => {
+       if(snap.exists()) {
+          const sData = snap.val();
+          setSchoolInfo(sData);
+          setSchoolForm({
+             alamat: sData.alamat || '',
+             kepalaSekolah: sData.kepalaSekolah || '',
+             nipKepalaSekolah: sData.nipKepalaSekolah || '',
+             telepon: sData.telepon || sData.waNumber || '',
+             logoUrl: sData.logoUrl || ''
+          });
+       }
+    });
+
+    return () => unsubSchool();
   }, [schoolId]);
 
   // --- FUNGSI LOGOUT INTERNAL ---
@@ -84,18 +114,117 @@ export default function SchoolAdminDashboard() {
     });
   };
 
-  // --- FILTER LOGIC KHUSUS SEKOLAH INI ---
+  // --- MANAJEMEN PROFIL SEKOLAH ---
+  const handleUpdateSchool = (e) => {
+    e.preventDefault();
+    update(ref(db, `clients/${schoolId}`), schoolForm)
+      .then(() => alert("Profil Sekolah Berhasil Diperbarui!"))
+      .catch(err => alert("Gagal menyimpan: " + err.message));
+  };
+
+  // --- DATA FILTERING KHUSUS SEKOLAH INI ---
   const schoolTeachers = data.users.filter(u => u.schoolId === schoolId && u.role === 'teacher');
   const pendingTeachers = schoolTeachers.filter(u => u.status === 'pending');
   const activeTeachers = schoolTeachers.filter(u => u.status !== 'pending');
-  
   const schoolTeacherEmails = schoolTeachers.map(t => t.email);
+  
   const schoolLeaderboard = data.lead.filter(l => schoolTeacherEmails.includes(l.teacherEmail));
+  const schoolStudents = data.students.filter(s => s.schoolId === schoolId);
+  const schoolClasses = data.classes.filter(c => c.schoolId === schoolId);
+  const schoolSubjects = data.subjects.filter(s => s.schoolId === schoolId);
+  const schoolSessions = data.sessions.filter(s => schoolTeacherEmails.includes(s.teacherEmail)).sort((a,b) => b.timestamp - a.timestamp);
 
-  // --- FILTER DROPDOWN REKAP ---
+  // --- MANAJEMEN MASTER DATA (KELAS & MAPEL) ---
+  const handleAddClass = (e) => {
+     e.preventDefault();
+     if(!classForm) return;
+     push(ref(db, 'master_classes'), { name: classForm, schoolId }).then(() => setClassForm(''));
+  };
+  const handleDeleteClass = (id) => { if(window.confirm("Hapus kelas ini?")) remove(ref(db, `master_classes/${id}`)); };
+
+  const handleAddSubject = (e) => {
+     e.preventDefault();
+     if(!subjectForm) return;
+     push(ref(db, 'master_subjects'), { name: subjectForm, schoolId }).then(() => setSubjectForm(''));
+  };
+  const handleDeleteSubject = (id) => { if(window.confirm("Hapus Mapel ini?")) remove(ref(db, `master_subjects/${id}`)); };
+
+  // --- MANAJEMEN SISWA ---
+  const handleAddStudent = (e) => {
+    e.preventDefault();
+    push(ref(db, 'students'), { ...studentForm, schoolId, createdAt: Date.now() })
+      .then(() => {
+        alert("Siswa berhasil ditambahkan!");
+        setShowAddStudentModal(false);
+        setStudentForm({ name: '', nisn: '', kelas: '', subKelas: '' });
+      });
+  };
+  const handleDeleteStudent = (id) => { if(window.confirm("Hapus siswa ini dari database?")) remove(ref(db, `students/${id}`)); };
+
+  const handleImportStudents = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
+        let count = 0;
+        d.forEach(row => {
+          if (row.Nama && row.Kelas) {
+            push(ref(db, 'students'), {
+              name: String(row.Nama),
+              nisn: String(row.NISN || ''),
+              kelas: String(row.Kelas),
+              subKelas: String(row.SubKelas || ''),
+              schoolId: schoolId,
+              createdAt: Date.now()
+            });
+            count++;
+          }
+        });
+        alert(`${count} Siswa berhasil di-import!`);
+        if(fileInputRef.current) fileInputRef.current.value = '';
+      } catch(err) {
+        alert("Gagal Import: Format Excel salah.");
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+  const downloadStudentTemplate = () => {
+    const wsData = [ { Nama: "Budi Santoso", NISN: "0012345678", Kelas: "10", SubKelas: "A" }, { Nama: "Siti Aminah", NISN: "0012345679", Kelas: "10", SubKelas: "B" } ];
+    const ws = XLSX.utils.json_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Format_Siswa");
+    XLSX.writeFile(wb, "Template_Import_Siswa.xlsx");
+  };
+
+  // --- MANAJEMEN GURU ---
+  const handleAddGuru = async (e) => {
+    e.preventDefault();
+    if (schoolId === 'UNREGISTERED') return alert("Akses dibatasi.");
+    try {
+      const newAuth = getAuth();
+      const userCred = await createUserWithEmailAndPassword(newAuth, guruForm.email, guruForm.password);
+      await set(ref(db, `users/${userCred.user.uid}`), { name: guruForm.name, email: guruForm.email, role: 'teacher', schoolId, status: 'active', createdAt: Date.now() });
+      alert("Akun Guru berhasil dibuat!"); setShowAddGuruModal(false); setGuruForm({ name: '', email: '', password: '' });
+    } catch (err) { alert("Gagal membuat guru: " + err.message); }
+  };
+  const handleUpdateGuru = (e) => {
+    e.preventDefault(); update(ref(db, `users/${editGuruId}`), { name: guruForm.name }); alert("Data Guru Diperbarui!"); setShowEditGuruModal(false);
+  };
+  const approveTeacher = (id) => update(ref(db, `users/${id}`), { status: 'active' });
+  const rejectTeacher = (id) => { if(window.confirm("Tolak & Hapus pendaftar ini?")) remove(ref(db, `users/${id}`)); };
+  const deleteTeacher = (id) => { if(window.confirm("Hapus akun guru ini dari sekolah?")) remove(ref(db, `users/${id}`)); };
+  const handleResetPassword = (email) => {
+    if (window.confirm(`Kirim instruksi reset kata sandi ke email: ${email}?`)) {
+      sendPasswordResetEmail(auth, email).then(() => alert("Link Reset Sandi Berhasil Dikirim!")).catch((err) => alert("Gagal: " + err.message));
+    }
+  };
+
+  // --- REKAP & PRINT ---
   const availableGurus = [...new Set(schoolLeaderboard.map(s => s?.teacherEmail).filter(Boolean))];
   const availableMapels = [...new Set(schoolLeaderboard.filter(s => recapGuru === '' || s.teacherEmail === recapGuru).map(s => s?.mapel).filter(Boolean))];
-  const availableKelas = [...new Set(schoolLeaderboard.filter(s => (recapGuru === '' || s.teacherEmail === recapGuru) && (recapMapel === '' || s.mapel === recapMapel)).map(s => s?.class).filter(Boolean))];
+  const availableKelasRekap = [...new Set(schoolLeaderboard.filter(s => (recapGuru === '' || s.teacherEmail === recapGuru) && (recapMapel === '' || s.mapel === recapMapel)).map(s => s?.class).filter(Boolean))];
 
   const filteredLeaderboard = schoolLeaderboard.filter(s => 
     (recapGuru === '' || s?.teacherEmail === recapGuru) && 
@@ -103,57 +232,12 @@ export default function SchoolAdminDashboard() {
     (recapKelas === '' || s?.class === recapKelas)
   ).sort((a, b) => b.score - a.score);
 
-  // --- MANAJEMEN GURU ---
-  const handleAddGuru = async (e) => {
-    e.preventDefault();
-    if (schoolId === 'UNREGISTERED') return alert("Akun Anda belum terikat pada instansi mana pun. Tidak bisa menambahkan guru.");
-
-    try {
-      const newAuth = getAuth();
-      const userCred = await createUserWithEmailAndPassword(newAuth, guruForm.email, guruForm.password);
-      
-      await set(ref(db, `users/${userCred.user.uid}`), {
-        name: guruForm.name,
-        email: guruForm.email,
-        role: 'teacher',
-        schoolId: schoolId, // Otomatis mengikat guru ke instansi ini
-        status: 'active',
-        createdAt: Date.now()
-      });
-
-      alert("Akun Guru berhasil dibuat!");
-      setShowAddGuruModal(false);
-      setGuruForm({ name: '', email: '', password: '' });
-    } catch (err) {
-      alert("Gagal membuat guru: " + err.message);
-    }
-  };
-
-  const handleUpdateGuru = (e) => {
-    e.preventDefault();
-    update(ref(db, `users/${editGuruId}`), { name: guruForm.name });
-    alert("Data Guru Diperbarui!");
-    setShowEditGuruModal(false);
-  };
-
-  const approveTeacher = (id) => update(ref(db, `users/${id}`), { status: 'active' });
-  const rejectTeacher = (id) => { if(window.confirm("Tolak & Hapus pendaftar ini?")) remove(ref(db, `users/${id}`)); };
-  const deleteTeacher = (id) => { if(window.confirm("Hapus akun guru ini dari sekolah?")) remove(ref(db, `users/${id}`)); };
-  
-  const handleResetPassword = (email) => {
-    if (window.confirm(`Kirim instruksi reset kata sandi ke email: ${email}?`)) {
-      sendPasswordResetEmail(auth, email).then(() => alert("Link Reset Sandi Berhasil Dikirim!")).catch((err) => alert("Gagal: " + err.message));
-    }
-  };
-
   const downloadRecap = () => {
     if (filteredLeaderboard.length === 0) return alert("Belum ada data nilai.");
-    try {
-      const ws = XLSX.utils.json_to_sheet(filteredLeaderboard);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Rekap Sekolah");
-      XLSX.writeFile(wb, `REKAP_${schoolId.toUpperCase()}_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
-    } catch(err) { alert("Gagal mengunduh: " + err.message); }
+    const ws = XLSX.utils.json_to_sheet(filteredLeaderboard);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Rekap Sekolah");
+    XLSX.writeFile(wb, `REKAP_${schoolId.toUpperCase()}_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
   };
 
   const NavItem = ({ tab, icon: Icon, label, badge }) => (
@@ -164,14 +248,14 @@ export default function SchoolAdminDashboard() {
   );
 
   const OfficialHeader = () => (
-    <div className="hidden print:block text-center mb-8 border-b-4 border-double border-black pb-4">
-      <h1 className="text-xl font-black uppercase tracking-widest text-black">ADMINISTRASI SEKOLAH</h1>
-      <h2 className="text-lg font-black uppercase tracking-widest text-black mt-1">KODE INSTANSI: {schoolId.toUpperCase()}</h2>
-      <p className="mt-2 text-xs font-bold text-gray-800">Dokumen Resmi Laporan Nilai CBT Bersama</p>
+    <div className="hidden print:flex flex-col items-center justify-center mb-8 border-b-4 border-double border-black pb-4 text-center">
+      {schoolInfo?.logoUrl && <img src={schoolInfo.logoUrl} alt="Logo" className="h-20 mb-2 object-contain" />}
+      <h1 className="text-2xl font-black uppercase tracking-widest text-black">{schoolInfo?.name || 'ADMINISTRASI SEKOLAH'}</h1>
+      <h2 className="text-sm font-bold text-gray-800 mt-1">{schoolInfo?.alamat || 'Alamat Sekolah Belum Diatur'}</h2>
+      <p className="mt-1 text-xs font-bold text-gray-800">Telepon: {schoolInfo?.telepon || '-'} | ID: {schoolId.toUpperCase()}</p>
     </div>
   );
 
-  // Mencegah error render jika profil sedang ditarik
   if (isLoadingProfile) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
@@ -181,20 +265,30 @@ export default function SchoolAdminDashboard() {
     );
   }
 
-  // Tampilan Dashboard
+  if (!adminProfile) {
+     return (
+       <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
+          <AlertTriangle size={60} className="text-red-500 mb-4" />
+          <p className="text-xl font-black text-slate-700 mb-2">Sesi Terputus</p>
+          <p className="text-sm font-bold text-slate-500 max-w-md mb-6">Autentikasi gagal atau sesi login Anda telah kedaluwarsa. Silakan login kembali.</p>
+          <button onClick={() => navigate('/login')} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md transition-colors">Kembali ke Login</button>
+       </div>
+     );
+  }
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans animate-in fade-in duration-500">
       <style>{`
         @media print { 
-          @page { margin: 1cm; size: portrait; } 
+          @page { margin: 1.5cm; size: portrait; } 
           html, body, #root { height: auto !important; overflow: visible !important; background: white !important; -webkit-print-color-adjust: exact; margin: 0; }
           .h-screen, .min-h-screen, .overflow-hidden, .overflow-y-auto, main, .flex-1 { height: auto !important; min-height: auto !important; overflow: visible !important; display: block !important; position: static !important; } 
           aside, header, button, select, input, .print\\:hidden { display: none !important; } 
-          .print\\:block { display: block !important; } 
+          .print\\:flex { display: flex !important; } .print\\:block { display: block !important; } 
           table { width: 100% !important; border-collapse: collapse; margin-top: 10px; border: 1.5px solid black !important; page-break-inside: auto; } 
           thead { display: table-header-group; } 
           tr { page-break-inside: avoid; page-break-after: auto; } 
-          th, td { border: 1px solid #000 !important; padding: 6px 8px !important; color: black !important; font-size: 11px !important; line-height: 1.3; } 
+          th, td { border: 1px solid #000 !important; padding: 8px !important; color: black !important; font-size: 11px !important; line-height: 1.3; } 
           th { background-color: #f0f0f0 !important; font-weight: bold; text-transform: uppercase; } 
         }
       `}</style>
@@ -204,14 +298,21 @@ export default function SchoolAdminDashboard() {
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 shadow-2xl md:shadow-none`}>
         <div className="p-5 border-b border-slate-100 flex justify-between items-center"><h1 className="text-lg font-black text-blue-700 flex gap-2 items-center tracking-tight"><ShieldCheck size={24} className="text-blue-500"/> TATA USAHA</h1><button className="md:hidden text-slate-400" onClick={() => setIsMobileMenuOpen(false)}><X size={20}/></button></div>
         <div className="p-4 mx-3 mt-3 mb-1 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-black text-xl shrink-0 uppercase">{schoolName.charAt(0)}</div>
+          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-black text-xl shrink-0 uppercase">{adminName.charAt(0)}</div>
           <div className="min-w-0">
             <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-0.5">ID: {schoolId}</p>
-            <p className="text-xs font-bold truncate text-slate-800">{schoolName}</p>
+            <p className="text-xs font-bold truncate text-slate-800">{adminName}</p>
           </div>
         </div>
         <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
-          <NavItem tab="guru" icon={Users} label="Data Guru Sekolah" badge={pendingTeachers.length} />
+          <NavItem tab="dashboard" icon={LayoutDashboard} label="Dashboard" />
+          <NavItem tab="sekolah" icon={Building2} label="Profil Instansi" />
+          <div className="my-3 border-t border-slate-100"></div>
+          <NavItem tab="master-data" icon={Database} label="Master Kelas & Mapel" />
+          <NavItem tab="siswa" icon={GraduationCap} label="Database Siswa" />
+          <NavItem tab="guru" icon={Users} label="Manajemen Guru" badge={pendingTeachers.length} />
+          <div className="my-3 border-t border-slate-100"></div>
+          <NavItem tab="monitor" icon={Radio} label="Monitor Ujian Global" />
           <NavItem tab="recap" icon={ClipboardList} label="Rekapitulasi Nilai" />
         </nav>
         <div className="p-4 border-t border-slate-100">
@@ -225,19 +326,18 @@ export default function SchoolAdminDashboard() {
         <header className="bg-white border-b border-slate-200 p-4 flex justify-between items-center z-10 print:hidden shadow-sm">
           <div className="flex items-center gap-3">
             <button className="md:hidden p-1.5 bg-slate-100 rounded-lg text-blue-600" onClick={() => setIsMobileMenuOpen(true)}><Menu size={20}/></button>
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Dashboard Operator</h2>
+            <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Pusat Komando Administrasi</h2>
           </div>
           <div className={`px-3 py-1.5 rounded-full border flex items-center gap-1.5 ${schoolId === 'UNREGISTERED' ? 'bg-orange-50 border-orange-200' : 'bg-blue-50 border-blue-100'}`}>
              <div className={`w-2 h-2 rounded-full animate-pulse ${schoolId === 'UNREGISTERED' ? 'bg-orange-500' : 'bg-blue-500'}`}></div>
              <span className={`text-[10px] font-black uppercase ${schoolId === 'UNREGISTERED' ? 'text-orange-700' : 'text-blue-700'}`}>
-               {schoolId === 'UNREGISTERED' ? 'Akses Terbatas' : `${schoolId} Aktif`}
+               {schoolId === 'UNREGISTERED' ? 'Akses Terbatas' : `${schoolInfo?.plan || 'Aktif'}`}
              </span>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-slate-50">
 
-          {/* PERINGATAN JIKA SCHOOL ID KOSONG */}
           {schoolId === 'UNREGISTERED' && (
             <div className="mb-6 bg-orange-50 border border-orange-200 p-4 rounded-xl flex items-start gap-3">
                <AlertTriangle className="text-orange-600 shrink-0 mt-0.5" size={20} />
@@ -245,6 +345,203 @@ export default function SchoolAdminDashboard() {
                  <h4 className="font-bold text-orange-800">Akun Belum Terverifikasi Institusi</h4>
                  <p className="text-sm text-orange-700 mt-1">Akun Anda belum dikaitkan dengan ID Sekolah mana pun. Silakan hubungi Master Administrator agar akun Anda dimasukkan ke dalam pangkalan data sekolah.</p>
                </div>
+            </div>
+          )}
+
+          {/* TAB DASHBOARD UTAMA */}
+          {activeTab === 'dashboard' && (
+             <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
+                   <div className="absolute right-0 top-0 opacity-10 transform translate-x-10 -translate-y-10">
+                      <Building2 size={250} />
+                   </div>
+                   <h2 className="text-3xl font-black mb-2 tracking-tight">Selamat Datang, {adminName}!</h2>
+                   <p className="text-blue-100 font-medium text-lg max-w-xl">Anda berada di pusat kendali administrasi CBT untuk instansi <strong className="text-white">{schoolInfo?.name || schoolId}</strong>.</p>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                   <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-center">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3"><Users size={20}/></div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Guru Aktif</p>
+                      <p className="text-3xl font-black text-slate-800">{activeTeachers.length}</p>
+                   </div>
+                   <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-center">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3"><GraduationCap size={20}/></div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Siswa</p>
+                      <p className="text-3xl font-black text-slate-800">{schoolStudents.length}</p>
+                   </div>
+                   <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-center">
+                      <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-3"><Database size={20}/></div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Data Kelas</p>
+                      <p className="text-3xl font-black text-slate-800">{schoolClasses.length}</p>
+                   </div>
+                   <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-center">
+                      <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-3"><ClipboardList size={20}/></div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Nilai</p>
+                      <p className="text-3xl font-black text-slate-800">{schoolLeaderboard.length}</p>
+                   </div>
+                </div>
+             </div>
+          )}
+
+          {/* TAB PROFIL SEKOLAH */}
+          {activeTab === 'sekolah' && (
+             <div className="space-y-6 max-w-4xl mx-auto animate-in fade-in duration-300">
+                <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200">
+                   <div className="flex items-center gap-4 border-b border-slate-100 pb-5 mb-6">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-600 shrink-0"><Building2 size={28}/></div>
+                      <div>
+                         <h3 className="text-2xl font-black text-slate-800 tracking-tight">Profil Instansi</h3>
+                         <p className="text-sm font-bold text-slate-500 mt-1">Data ini akan digunakan sebagai Kop Surat Resmi di setiap cetakan laporan.</p>
+                      </div>
+                   </div>
+
+                   <form onSubmit={handleUpdateSchool} className="space-y-6">
+                      <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Informasi Sistem (Read Only)</h4>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">ID Tenant</label><input disabled value={schoolId} className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl text-sm font-bold text-slate-500 cursor-not-allowed uppercase" /></div>
+                            <div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Nama Instansi</label><input disabled value={schoolInfo?.name || ''} className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl text-sm font-black text-slate-700 cursor-not-allowed" /></div>
+                         </div>
+                      </div>
+
+                      <div className="space-y-4">
+                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 border-b border-slate-100 pb-2">Identitas Operasional</h4>
+                         
+                         <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1.5"><MapPin size={12}/> Alamat Lengkap Sekolah</label>
+                            <textarea required value={schoolForm.alamat} onChange={e => setSchoolForm({...schoolForm, alamat: e.target.value})} placeholder="Ketik alamat lengkap..." className="w-full p-3 border border-slate-200 bg-white rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-800 min-h-[80px]" />
+                         </div>
+
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                               <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1.5"><Briefcase size={12}/> Nama Kepala Sekolah</label>
+                               <input required value={schoolForm.kepalaSekolah} onChange={e => setSchoolForm({...schoolForm, kepalaSekolah: e.target.value})} placeholder="Contoh: Drs. Budi Santoso" className="w-full p-3 border border-slate-200 bg-white rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-800" />
+                            </div>
+                            <div>
+                               <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1.5"><Briefcase size={12}/> NIP Kepala Sekolah</label>
+                               <input value={schoolForm.nipKepalaSekolah} onChange={e => setSchoolForm({...schoolForm, nipKepalaSekolah: e.target.value})} placeholder="Opsional (Ketik - jika tidak ada)" className="w-full p-3 border border-slate-200 bg-white rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-800" />
+                            </div>
+                         </div>
+
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                               <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1.5"><Phone size={12}/> Kontak / Telepon Sekolah</label>
+                               <input value={schoolForm.telepon} onChange={e => setSchoolForm({...schoolForm, telepon: e.target.value})} placeholder="Nomor Telp/WA" className="w-full p-3 border border-slate-200 bg-white rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-800" />
+                            </div>
+                            <div>
+                               <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1.5"><ImageIcon size={12}/> Link URL Logo Sekolah (Opsional)</label>
+                               <input value={schoolForm.logoUrl} onChange={e => setSchoolForm({...schoolForm, logoUrl: e.target.value})} placeholder="https://domain.com/logo.png" className="w-full p-3 border border-slate-200 bg-white rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-800" />
+                            </div>
+                         </div>
+                      </div>
+
+                      <button type="submit" disabled={schoolId === 'UNREGISTERED'} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl text-sm font-black shadow-lg shadow-blue-600/30 active:scale-95 transition-all tracking-widest flex justify-center items-center gap-2 disabled:opacity-50">
+                         <CheckCircle size={18}/> SIMPAN PROFIL INSTANSI
+                      </button>
+                   </form>
+                </div>
+             </div>
+          )}
+
+          {/* TAB MASTER DATA (KELAS & MAPEL) */}
+          {activeTab === 'master-data' && (
+            <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
+               <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 mb-6">
+                  <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 mb-2"><Database className="text-blue-600"/> Master Data Sekolah</h3>
+                  <p className="text-sm text-slate-500">Daftarkan Kelas dan Mata Pelajaran resmi di sini agar bisa dipilih oleh guru saat membuat soal.</p>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* MASTER KELAS */}
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                     <div className="p-5 border-b border-slate-100 bg-slate-50">
+                        <h4 className="font-black text-slate-800 text-lg">Daftar Tingkat/Kelas</h4>
+                     </div>
+                     <div className="p-5 flex-1 overflow-y-auto max-h-[400px]">
+                        <ul className="space-y-2">
+                           {schoolClasses.map(c => (
+                              <li key={c.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                 <span className="font-bold text-slate-700">Tingkat {c.name}</span>
+                                 <button onClick={() => handleDeleteClass(c.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={16}/></button>
+                              </li>
+                           ))}
+                           {schoolClasses.length === 0 && <li className="text-center p-4 text-slate-400 text-sm font-bold">Belum ada kelas terdaftar.</li>}
+                        </ul>
+                     </div>
+                     <div className="p-4 border-t border-slate-100 bg-white">
+                        <form onSubmit={handleAddClass} className="flex gap-2">
+                           <input value={classForm} onChange={e=>setClassForm(e.target.value)} required placeholder="Cth: 10" className="flex-1 p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-700" />
+                           <button disabled={schoolId === 'UNREGISTERED'} type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-3 rounded-xl font-black shadow-md transition-colors"><Plus size={18}/></button>
+                        </form>
+                     </div>
+                  </div>
+
+                  {/* MASTER MAPEL */}
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                     <div className="p-5 border-b border-slate-100 bg-slate-50">
+                        <h4 className="font-black text-slate-800 text-lg">Daftar Mata Pelajaran</h4>
+                     </div>
+                     <div className="p-5 flex-1 overflow-y-auto max-h-[400px]">
+                        <ul className="space-y-2">
+                           {schoolSubjects.map(s => (
+                              <li key={s.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                 <span className="font-bold text-slate-700">{s.name}</span>
+                                 <button onClick={() => handleDeleteSubject(s.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={16}/></button>
+                              </li>
+                           ))}
+                           {schoolSubjects.length === 0 && <li className="text-center p-4 text-slate-400 text-sm font-bold">Belum ada Mapel terdaftar.</li>}
+                        </ul>
+                     </div>
+                     <div className="p-4 border-t border-slate-100 bg-white">
+                        <form onSubmit={handleAddSubject} className="flex gap-2">
+                           <input value={subjectForm} onChange={e=>setSubjectForm(e.target.value)} required placeholder="Cth: Matematika" className="flex-1 p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-700" />
+                           <button disabled={schoolId === 'UNREGISTERED'} type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-3 rounded-xl font-black shadow-md transition-colors"><Plus size={18}/></button>
+                        </form>
+                     </div>
+                  </div>
+               </div>
+            </div>
+          )}
+
+          {/* TAB MANAJEMEN SISWA */}
+          {activeTab === 'siswa' && (
+            <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
+              <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleImportStudents} className="hidden" />
+
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                 <div>
+                    <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><GraduationCap className="text-blue-600"/> Database Siswa</h3>
+                    <p className="text-sm text-slate-500 mt-1">Total Siswa Terdaftar: <span className="font-black text-slate-700">{schoolStudents.length}</span></p>
+                 </div>
+                 <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                    <button onClick={downloadStudentTemplate} className="flex-1 md:flex-none bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors"><Download size={16}/> Template</button>
+                    <button onClick={() => {if(fileInputRef.current) fileInputRef.current.click()}} disabled={schoolId === 'UNREGISTERED'} className="flex-1 md:flex-none bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-emerald-200 transition-colors disabled:opacity-50"><Upload size={16}/> Import Excel</button>
+                    <button onClick={() => setShowAddStudentModal(true)} disabled={schoolId === 'UNREGISTERED'} className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all disabled:opacity-50"><Plus size={16}/> Input Manual</button>
+                 </div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-x-auto shadow-sm">
+                <table className="w-full text-left text-sm whitespace-nowrap">
+                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                    <tr><th className="py-4 px-6 w-16 text-center">No</th><th className="py-4 px-6 font-bold uppercase tracking-wider text-xs">Nama Lengkap</th><th className="py-4 px-6 font-bold uppercase tracking-wider text-xs">NISN</th><th className="py-4 px-6 text-center font-bold uppercase tracking-wider text-xs">Kelas / Ruang</th><th className="py-4 px-6 text-center font-bold uppercase tracking-wider text-xs w-24">Aksi</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {schoolStudents.map((s, i) => (
+                      <tr key={s.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-6 text-center font-bold text-slate-500">{i + 1}</td>
+                        <td className="py-3 px-6 font-black text-slate-800">{s.name}</td>
+                        <td className="py-3 px-6 text-slate-500 font-medium">{s.nisn || '-'}</td>
+                        <td className="py-3 px-6 text-center font-bold text-slate-600">{s.kelas}-{s.subKelas}</td>
+                        <td className="py-3 px-6 text-center">
+                           <button onClick={() => handleDeleteStudent(s.id)} className="text-slate-400 hover:text-red-600 bg-slate-50 hover:bg-red-50 border border-slate-200 p-2 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                        </td>
+                      </tr>
+                    ))}
+                    {schoolStudents.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-400 font-medium">Belum ada data siswa di sekolah ini.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
           
@@ -303,6 +600,37 @@ export default function SchoolAdminDashboard() {
             </div>
           )}
 
+          {/* TAB MONITOR UJIAN GLOBAL */}
+          {activeTab === 'monitor' && (
+            <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
+               <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 mb-6">
+                  <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 mb-2"><Radio className="text-blue-600"/> Monitor Ujian Global</h3>
+                  <p className="text-sm text-slate-500">Pantau semua jadwal dan sesi ujian yang dibuat oleh para guru di instansi Anda.</p>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {schoolSessions.map(session => (
+                     <div key={session.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+                        <div>
+                           <div className="flex justify-between items-start mb-3">
+                              <h4 className="text-xl font-black font-mono tracking-widest text-slate-800">{session.token}</h4>
+                              <span className={`text-[9px] font-black px-2 py-1 rounded border uppercase ${session.status === 'open' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'}`}>{session.status}</span>
+                           </div>
+                           <p className="font-bold text-blue-600 text-sm">{session.mapel} <span className="text-slate-400 text-xs font-medium ml-1">(Kls: {session.kelas}-{session.subKelas})</span></p>
+                           <p className="text-xs text-slate-500 mt-1">Guru: {session.teacherEmail}</p>
+                           
+                           <div className="mt-4 pt-3 border-t border-slate-100 text-[10px] font-bold text-slate-400 flex justify-between">
+                              <span>Waktu: {session.jamMulai || '--'} - {session.jamSelesai || '--'}</span>
+                              <span>Porsi: PG({session.bobotPG}%) Esai({session.bobotEsai}%)</span>
+                           </div>
+                        </div>
+                     </div>
+                  ))}
+                  {schoolSessions.length === 0 && <div className="col-span-full p-10 text-center border border-dashed border-slate-300 rounded-2xl text-slate-400 font-bold">Belum ada sesi ujian yang dibuat oleh guru.</div>}
+               </div>
+            </div>
+          )}
+
           {/* TAB REKAP NILAI SEKOLAH INI */}
           {activeTab === 'recap' && (
             <div className="space-y-5 max-w-7xl mx-auto print:max-w-full animate-in fade-in duration-300">
@@ -338,6 +666,13 @@ export default function SchoolAdminDashboard() {
                     ))}
                   </tbody>
                 </table>
+                <div className="flex justify-end mt-12 text-center">
+                  <div className="w-64">
+                    <p>Kepala Sekolah,</p><br/><br/><br/>
+                    <p className="font-bold uppercase border-b border-black pb-1">{schoolInfo?.kepalaSekolah || '_________________________'}</p>
+                    <p className="text-xs">NIP. {schoolInfo?.nipKepalaSekolah || '_________________'}</p>
+                  </div>
+                </div>
               </div>
 
               <div className={`${printMode === 'berita_acara' ? 'hidden print:block' : 'hidden'}`}>
@@ -355,8 +690,15 @@ export default function SchoolAdminDashboard() {
                   <div className="w-full h-24 border border-black mt-6 mb-8"></div>
                 </div>
                 <div className="flex justify-between mt-12 text-center">
-                  <div className="w-64"><p>Guru Mata Pelajaran,</p><br/><br/><br/><p className="font-bold uppercase border-b border-black pb-1">_________________________</p></div>
-                  <div className="w-64"><p>Kepala / Admin Tata Usaha,</p><br/><br/><br/><p className="font-bold uppercase border-b border-black pb-1">{schoolName}</p></div>
+                  <div className="w-64">
+                     <p>Guru Mata Pelajaran,</p><br/><br/><br/>
+                     <p className="font-bold uppercase border-b border-black pb-1">{recapGuru || '_________________________'}</p>
+                  </div>
+                  <div className="w-64">
+                     <p>Kepala Sekolah,</p><br/><br/><br/>
+                     <p className="font-bold uppercase border-b border-black pb-1">{schoolInfo?.kepalaSekolah || '_________________________'}</p>
+                     <p className="text-xs">NIP. {schoolInfo?.nipKepalaSekolah || '_________________'}</p>
+                  </div>
                 </div>
               </div>
 
@@ -425,6 +767,30 @@ export default function SchoolAdminDashboard() {
               <div><label className="text-xs font-bold text-slate-500 mb-1 block">Nama Lengkap & Gelar</label><input required value={guruForm.name} onChange={e => setGuruForm({...guruForm, name: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" /></div>
               <div><label className="text-xs font-bold text-slate-500 mb-1 block">Email Akun (Info Saja)</label><input disabled value={guruForm.email} className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-500" /></div>
               <div className="flex gap-2 pt-2"><button type="button" onClick={() => setShowEditGuruModal(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Batal</button><button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black transition-colors">Simpan Revisi</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TAMBAH SISWA MANUAL */}
+      {showAddStudentModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[120] print:hidden">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <h2 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><Plus className="text-blue-600"/> Input Data Siswa</h2>
+            <form onSubmit={handleAddStudent} className="space-y-4">
+              <div><label className="text-xs font-bold text-slate-500 mb-1 block">Nama Lengkap</label><input required value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 uppercase" placeholder="Budi Santoso" /></div>
+              <div><label className="text-xs font-bold text-slate-500 mb-1 block">NISN (Opsional)</label><input value={studentForm.nisn} onChange={e => setStudentForm({...studentForm, nisn: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="0012345678" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                 <div>
+                    <label className="text-xs font-bold text-slate-500 mb-1 block">Kelas</label>
+                    <select required value={studentForm.kelas} onChange={e => setStudentForm({...studentForm, kelas: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
+                       <option value="">Pilih</option>
+                       {schoolClasses.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    </select>
+                 </div>
+                 <div><label className="text-xs font-bold text-slate-500 mb-1 block">Sub/Ruang</label><input required value={studentForm.subKelas} onChange={e => setStudentForm({...studentForm, subKelas: e.target.value.toUpperCase()})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 uppercase" placeholder="A" /></div>
+              </div>
+              <div className="flex gap-2 pt-2"><button type="button" onClick={() => setShowAddStudentModal(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Batal</button><button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black transition-colors">Simpan Data</button></div>
             </form>
           </div>
         </div>
