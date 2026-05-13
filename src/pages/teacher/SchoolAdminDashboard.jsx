@@ -2,17 +2,17 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { ref, onValue, update, remove, set } from 'firebase/database';
-import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth'; // Tambah signOut
-import { useNavigate } from 'react-router-dom'; // Tambah useNavigate
+import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged } from 'firebase/auth'; 
+import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import { Users, ClipboardList, LogOut, Plus, Trash2, Edit, CheckCircle, XCircle, KeyRound, Menu, X, ShieldCheck, UserCog, BarChart, FileText, Download, Loader2 } from 'lucide-react';
+import { Users, ClipboardList, LogOut, Plus, Trash2, Edit, CheckCircle, XCircle, KeyRound, Menu, X, ShieldCheck, UserCog, BarChart, FileText, Download, Loader2, AlertTriangle } from 'lucide-react';
 
 export default function SchoolAdminDashboard() {
   const navigate = useNavigate();
   const auth = getAuth();
   
   const [adminProfile, setAdminProfile] = useState(null);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(true); // State loading untuk mencegah Akses Ditolak prematur
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true); 
 
   const [activeTab, setActiveTab] = useState('guru');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -31,27 +31,35 @@ export default function SchoolAdminDashboard() {
   const [recapKelas, setRecapKelas] = useState('');
   const [printMode, setPrintMode] = useState('rekap');
 
-  // 1. Tarik Data Profil Admin TU Terlebih Dahulu
+  // 1. Tarik Data Profil dengan Aman
   useEffect(() => {
-    if (auth.currentUser) {
-      const userRef = ref(db, `users/${auth.currentUser.uid}`);
-      onValue(userRef, (snap) => {
-        if (snap.exists()) {
-          setAdminProfile(snap.val());
-        }
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const userRef = ref(db, `users/${user.uid}`);
+        onValue(userRef, (snap) => {
+          if (snap.exists()) {
+            setAdminProfile(snap.val());
+          }
+          setIsLoadingProfile(false);
+        });
+      } else {
         setIsLoadingProfile(false);
-      });
-    } else {
-      setIsLoadingProfile(false);
-    }
-  }, [auth.currentUser]);
+        // Lempar jika ternyata tidak ada user (mencegah akses direct URL)
+        navigate('/login');
+      }
+    });
 
-  const schoolId = adminProfile?.schoolId || '';
+    return () => unsubscribeAuth();
+  }, [auth, navigate]);
+
+  // JIKA schoolId kosong (misal karena error saat daftar), kita beri nilai fallback 'UNREGISTERED'
+  // Ini mencegah aplikasi "menendang" user, sambil memberi tahu user bahwa akunnya belum terkait dengan sekolah mana pun.
+  const schoolId = adminProfile?.schoolId || 'UNREGISTERED';
   const schoolName = adminProfile?.name || 'Admin Sekolah';
 
-  // 2. Tarik Data Global Setelah schoolId Didapatkan
+  // 2. Tarik Data Global
   useEffect(() => {
-    if (!schoolId) return;
+    if (schoolId === 'UNREGISTERED') return; // Jangan tarik data jika belum terdaftar
 
     const fetchData = (path, key) => onValue(ref(db, path), snap => {
       const val = snap.val();
@@ -98,6 +106,8 @@ export default function SchoolAdminDashboard() {
   // --- MANAJEMEN GURU ---
   const handleAddGuru = async (e) => {
     e.preventDefault();
+    if (schoolId === 'UNREGISTERED') return alert("Akun Anda belum terikat pada instansi mana pun. Tidak bisa menambahkan guru.");
+
     try {
       const newAuth = getAuth();
       const userCred = await createUserWithEmailAndPassword(newAuth, guruForm.email, guruForm.password);
@@ -106,7 +116,7 @@ export default function SchoolAdminDashboard() {
         name: guruForm.name,
         email: guruForm.email,
         role: 'teacher',
-        schoolId: schoolId,
+        schoolId: schoolId, // Otomatis mengikat guru ke instansi ini
         status: 'active',
         createdAt: Date.now()
       });
@@ -129,6 +139,7 @@ export default function SchoolAdminDashboard() {
   const approveTeacher = (id) => update(ref(db, `users/${id}`), { status: 'active' });
   const rejectTeacher = (id) => { if(window.confirm("Tolak & Hapus pendaftar ini?")) remove(ref(db, `users/${id}`)); };
   const deleteTeacher = (id) => { if(window.confirm("Hapus akun guru ini dari sekolah?")) remove(ref(db, `users/${id}`)); };
+  
   const handleResetPassword = (email) => {
     if (window.confirm(`Kirim instruksi reset kata sandi ke email: ${email}?`)) {
       sendPasswordResetEmail(auth, email).then(() => alert("Link Reset Sandi Berhasil Dikirim!")).catch((err) => alert("Gagal: " + err.message));
@@ -160,29 +171,19 @@ export default function SchoolAdminDashboard() {
     </div>
   );
 
-  // Mencegah halaman "Akses Ditolak" muncul sebelum Firebase selesai memuat profil
+  // Mencegah error render jika profil sedang ditarik
   if (isLoadingProfile) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
          <Loader2 size={40} className="text-blue-500 animate-spin" />
-         <p className="text-sm font-bold text-slate-500 tracking-widest uppercase animate-pulse">Memverifikasi Instansi...</p>
+         <p className="text-sm font-bold text-slate-500 tracking-widest uppercase animate-pulse">Memverifikasi Akses Admin...</p>
       </div>
     );
   }
 
-  if (!schoolId) {
-    return (
-      <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
-         <ShieldCheck size={60} className="text-slate-300 mb-4" />
-         <p className="text-xl font-black text-slate-700 mb-2">Akses Ditolak</p>
-         <p className="text-sm font-bold text-slate-500 max-w-md">Akun Anda tidak terikat dengan instansi sekolah mana pun. Silakan hubungi Master Administrator.</p>
-         <button onClick={handleLogout} className="mt-6 bg-slate-800 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md hover:bg-slate-700 transition-colors">Kembali ke Login</button>
-      </div>
-    );
-  }
-
+  // Tampilan Dashboard
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
+    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans animate-in fade-in duration-500">
       <style>{`
         @media print { 
           @page { margin: 1cm; size: portrait; } 
@@ -205,7 +206,7 @@ export default function SchoolAdminDashboard() {
         <div className="p-4 mx-3 mt-3 mb-1 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-black text-xl shrink-0 uppercase">{schoolName.charAt(0)}</div>
           <div className="min-w-0">
-            <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-0.5">INSTANSI: {schoolId}</p>
+            <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-0.5">ID: {schoolId}</p>
             <p className="text-xs font-bold truncate text-slate-800">{schoolName}</p>
           </div>
         </div>
@@ -214,7 +215,6 @@ export default function SchoolAdminDashboard() {
           <NavItem tab="recap" icon={ClipboardList} label="Rekapitulasi Nilai" />
         </nav>
         <div className="p-4 border-t border-slate-100">
-           {/* TOMBOL KELUAR YANG SUDAH DIJAHIT */}
            <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-bold text-sm transition-colors">
                <LogOut size={16}/> Logout
            </button>
@@ -227,15 +227,28 @@ export default function SchoolAdminDashboard() {
             <button className="md:hidden p-1.5 bg-slate-100 rounded-lg text-blue-600" onClick={() => setIsMobileMenuOpen(true)}><Menu size={20}/></button>
             <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Dashboard Operator</h2>
           </div>
-          <div className="bg-blue-50 px-3 py-1.5 rounded-full border border-blue-100 flex items-center gap-1.5">
-             <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-             <span className="text-[10px] font-black text-blue-700 uppercase">{schoolId} Aktif</span>
+          <div className={`px-3 py-1.5 rounded-full border flex items-center gap-1.5 ${schoolId === 'UNREGISTERED' ? 'bg-orange-50 border-orange-200' : 'bg-blue-50 border-blue-100'}`}>
+             <div className={`w-2 h-2 rounded-full animate-pulse ${schoolId === 'UNREGISTERED' ? 'bg-orange-500' : 'bg-blue-500'}`}></div>
+             <span className={`text-[10px] font-black uppercase ${schoolId === 'UNREGISTERED' ? 'text-orange-700' : 'text-blue-700'}`}>
+               {schoolId === 'UNREGISTERED' ? 'Akses Terbatas' : `${schoolId} Aktif`}
+             </span>
           </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
+
+          {/* PERINGATAN JIKA SCHOOL ID KOSONG */}
+          {schoolId === 'UNREGISTERED' && (
+            <div className="mb-6 bg-orange-50 border border-orange-200 p-4 rounded-xl flex items-start gap-3">
+               <AlertTriangle className="text-orange-600 shrink-0 mt-0.5" size={20} />
+               <div>
+                 <h4 className="font-bold text-orange-800">Akun Belum Terverifikasi Institusi</h4>
+                 <p className="text-sm text-orange-700 mt-1">Akun Anda belum dikaitkan dengan ID Sekolah mana pun. Silakan hubungi Master Administrator agar akun Anda dimasukkan ke dalam pangkalan data sekolah.</p>
+               </div>
+            </div>
+          )}
           
-          {/* TAB MANAJEMEN GURU KHUSUS SEKOLAH INI */}
+          {/* TAB MANAJEMEN GURU */}
           {activeTab === 'guru' && (
             <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
@@ -243,7 +256,7 @@ export default function SchoolAdminDashboard() {
                     <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><Users className="text-blue-600"/> Personalia Guru Sekolah</h3>
                     <p className="text-sm text-slate-500 mt-1">Kelola staf pengajar yang terdaftar di instansi Anda.</p>
                  </div>
-                 <button onClick={() => { setGuruForm({name:'', email:'', password:''}); setShowAddGuruModal(true); }} className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 shadow-md active:scale-95 transition-all"><Plus size={18}/> Tambah Guru Baru</button>
+                 <button onClick={() => { setGuruForm({name:'', email:'', password:''}); setShowAddGuruModal(true); }} disabled={schoolId === 'UNREGISTERED'} className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 shadow-md active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"><Plus size={18}/> Tambah Guru Baru</button>
               </div>
 
               {pendingTeachers.length > 0 && (
@@ -296,7 +309,7 @@ export default function SchoolAdminDashboard() {
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 print:hidden space-y-4">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
                   <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-blue-600"/> Laporan Nilai Sekolah</h3>
-                  <button onClick={downloadRecap} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 border border-emerald-200 transition-colors"><Download size={16}/> Export Excel</button>
+                  <button onClick={downloadRecap} disabled={schoolId === 'UNREGISTERED'} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 border border-emerald-200 transition-colors disabled:opacity-50"><Download size={16}/> Export Excel</button>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -306,9 +319,9 @@ export default function SchoolAdminDashboard() {
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3">
-                  <button onClick={() => { setPrintMode('rekap'); setTimeout(() => window.print(), 300); }} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-sm"><BarChart size={16}/> Cetak Nilai</button>
-                  <button onClick={() => { setPrintMode('berita_acara'); setTimeout(() => window.print(), 300); }} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-sm"><FileText size={16}/> Berita Acara</button>
-                  <button onClick={() => { setPrintMode('daftar_hadir'); setTimeout(() => window.print(), 300); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-sm"><Users size={16}/> Daftar Hadir</button>
+                  <button onClick={() => { setPrintMode('rekap'); setTimeout(() => window.print(), 300); }} disabled={schoolId === 'UNREGISTERED'} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all tracking-wide disabled:opacity-50"><BarChart size={16}/> Cetak Nilai</button>
+                  <button onClick={() => { setPrintMode('berita_acara'); setTimeout(() => window.print(), 300); }} disabled={schoolId === 'UNREGISTERED'} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all disabled:opacity-50"><FileText size={16}/> Berita Acara</button>
+                  <button onClick={() => { setPrintMode('daftar_hadir'); setTimeout(() => window.print(), 300); }} disabled={schoolId === 'UNREGISTERED'} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all disabled:opacity-50"><Users size={16}/> Daftar Hadir</button>
                 </div>
               </div>
 
