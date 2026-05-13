@@ -1,96 +1,109 @@
 // src/pages/student/ResultPage.jsx
 import React, { useState, useEffect } from 'react';
-import { db, getTenantPath } from '../../config/firebase';
+import { db } from '../../config/firebase'; // Jalur database V3
 import { ref, onValue } from 'firebase/database';
-import { useAuth } from '../../contexts/AuthContext';
-import { CheckCircle, Trophy, Home, PartyPopper } from 'lucide-react';
+import { CheckCircle, Trophy, Home, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-export default function ResultPage({ score, onLogout }) {
-  const { userData, tenantData } = useAuth();
-  const schoolId = userData?.schoolId;
+export default function ResultPage({ score: propScore, studentData: propStudentData, onLogout }) {
+  const navigate = useNavigate();
+  
+  // Cerdas: Jika props kosong (karena Router), tarik dari LocalStorage
+  const [studentData, setStudentData] = useState(() => propStudentData || JSON.parse(localStorage.getItem('studentData')) || {});
+  const [score, setScore] = useState(propScore !== undefined ? propScore : null);
+  
   const [rank, setRank] = useState(null);
   const [totalStudents, setTotalStudents] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!schoolId || !userData) return;
+    if (!studentData?.name) return;
 
-    // Tarik leaderboard hanya milik sekolah ini
-    const leaderboardRef = ref(db, getTenantPath(schoolId, 'leaderboard'));
-    
-    const unsubscribe = onValue(leaderboardRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const allResults = Object.values(snapshot.val());
+    // Tembak ke Root Database V2
+    const leadRef = ref(db, 'leaderboard');
+    const unsub = onValue(leadRef, (snapshot) => {
+      setIsLoading(false);
+      if (snapshot.val()) {
+        const allData = Object.values(snapshot.val());
         
-        // Filter teman satu kelas di sekolah yang sama
-        const classmates = allResults.filter(s => 
-          s.mapel === userData.mapel && 
-          s.class === userData.class
-        );
-
-        // Urutkan dari skor tertinggi
-        classmates.sort((a, b) => (b.score || 0) - (a.score || 0));
-        
-        setTotalStudents(classmates.length);
-
-        // Cari posisi peringkat siswa ini
-        const myIndex = classmates.findIndex(s => 
-          s.name === userData.name && 
-          s.score === score
-        );
-
-        if (myIndex !== -1) {
-          setRank(myIndex + 1);
+        // 1. Cari skor siswa (Jika router gagal melempar props)
+        let currentScore = score;
+        if (currentScore === null) {
+           // Cari berdasarkan Nama dan Token di Leaderboard
+           const myData = allData.find(s => s.name === studentData.name && s.token === studentData.token && s.class === studentData.class);
+           if (myData) {
+               currentScore = myData.score;
+               setScore(currentScore);
+           }
         }
+
+        // 2. Kalkulasi Peringkat Kelas Real-time
+        const classmates = allData.filter(s => s.mapel === studentData?.mapel && s.class === studentData?.class && s.subKelas === studentData?.subKelas && s.token === studentData?.token);
+        
+        // Urutkan dari nilai tertinggi ke terendah
+        classmates.sort((a, b) => b.score - a.score);
+        setTotalStudents(classmates.length);
+        
+        // Cari indeks peringkat siswa ini
+        const myIndex = classmates.findIndex(s => s.name === studentData?.name && s.score === currentScore);
+        if (myIndex !== -1) setRank(myIndex + 1);
       }
     });
 
-    return () => unsubscribe();
-  }, [schoolId, userData, score]);
+    return () => unsub();
+  }, [studentData, score]);
+
+  const handleExit = () => {
+     if (onLogout) {
+         onLogout();
+     } else {
+         // Bersihkan memori dan kembali ke halaman Login Utama
+         localStorage.removeItem('studentData');
+         navigate('/login');
+     }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-emerald-50 dark:bg-slate-950 p-4 transition-colors duration-500">
-      <div className="bg-white dark:bg-slate-900 p-8 md:p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm text-center border border-emerald-100 dark:border-slate-800 animate-in fade-in zoom-in duration-500">
+    <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 p-4 transition-colors duration-300">
+      <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2rem] shadow-xl w-full max-w-md text-center border border-slate-200 dark:border-slate-700 animate-in zoom-in duration-500">
         
-        {score >= 70 ? (
-          <div className="relative">
-            <PartyPopper size={80} className="text-emerald-500 mx-auto mb-4 animate-bounce" />
-            <div className="absolute -top-2 -right-2 bg-yellow-400 text-[10px] font-black px-2 py-1 rounded-full shadow-sm">LULUS</div>
-          </div>
-        ) : (
-          <CheckCircle size={80} className="text-blue-500 mx-auto mb-4" />
-        )}
-
-        <h1 className="text-2xl font-black mb-1 text-slate-800 dark:text-white uppercase tracking-tighter">Hasil Ujian</h1>
-        <p className="text-slate-500 dark:text-slate-400 font-bold mb-8 uppercase text-xs tracking-widest italic border-b pb-4 border-slate-100 dark:border-slate-800">
-          {userData?.name}
-        </p>
-
-        <div className="bg-slate-50 dark:bg-slate-950/50 py-8 rounded-[2rem] mb-8 border border-slate-100 dark:border-slate-800 shadow-inner">
-          <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase mb-2 tracking-[0.2em]">Skor Akhir</p>
-          <div className="text-7xl font-black text-emerald-500 dark:text-emerald-400 drop-shadow-sm">{score}</div>
+        <div className="flex justify-center mb-6 relative">
+           <div className="absolute inset-0 bg-emerald-500/20 rounded-full blur-xl animate-pulse"></div>
+           <CheckCircle size={80} className="text-emerald-500 relative z-10" />
         </div>
-
-        {rank !== null && totalStudents > 1 && (
-          <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/30 p-5 rounded-2xl mb-8 flex items-center justify-center gap-4 text-orange-700 dark:text-orange-400 animate-pulse">
-            <Trophy size={32} className="shrink-0" />
+        
+        <h1 className="text-3xl font-black mb-2 text-slate-800 dark:text-white tracking-tight">Ujian Selesai!</h1>
+        <p className="text-slate-500 dark:text-slate-400 mb-8 font-bold text-lg">{studentData?.name || 'Siswa'}</p>
+        
+        <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 py-8 rounded-3xl mb-8 shadow-inner relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
+          <p className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">SKOR AKHIR ANDA</p>
+          <div className="text-7xl font-black text-emerald-500 tracking-tighter">
+             {score !== null ? score : '...'}
+          </div>
+        </div>
+        
+        {rank !== null && (
+          <div className="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 border border-orange-200 dark:border-orange-900/50 p-5 rounded-2xl mb-8 flex items-center justify-center gap-4 text-orange-700 dark:text-orange-500 shadow-sm">
+            <Trophy size={32} className="animate-bounce" />
             <div className="text-left">
-              <p className="text-[10px] font-black uppercase tracking-widest opacity-70">Peringkat Kelas</p>
-              <p className="font-black text-lg leading-none mt-1">Ke-{rank} <span className="text-xs font-medium opacity-60">dari {totalStudents} Siswa</span></p>
+               <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Peringkat Kelas</p>
+               <p className="text-lg font-black tracking-wide">Juara {rank} dari {totalStudents}</p>
             </div>
           </div>
         )}
-
-        <div className="space-y-3">
-            <p className="text-[10px] text-slate-400 font-medium mb-4 italic">
-                Data ini telah tercatat secara resmi di server <br/> {tenantData?.schoolName || 'Institusi'}.
-            </p>
-            <button 
-                onClick={onLogout} 
-                className="w-full bg-slate-900 dark:bg-emerald-600 text-white font-black py-5 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all shadow-xl shadow-slate-900/20 dark:shadow-emerald-900/20 tracking-widest uppercase text-sm"
-            >
-                <Home size={20}/> Kembali ke Beranda
-            </button>
-        </div>
+        
+        <button onClick={handleExit} className="w-full bg-slate-900 hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-black py-5 rounded-2xl flex items-center justify-center gap-3 shadow-lg active:scale-95 transition-all tracking-widest text-sm">
+           <LogOut size={20}/> KELUAR & KEMBALI
+        </button>
       </div>
     </div>
   );
