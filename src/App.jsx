@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 // IMPORT HALAMAN ASLI (V3 SAAS)
 // ==========================================
 import LoginPortal from './pages/auth/LoginPortal';
+import RegisterPortal from './pages/auth/RegisterPortal'; // IMPORT PAGE BARU
 import MasterDashboard from './pages/superadmin/MasterDashboard';
 import SchoolAdminDashboard from './pages/teacher/SchoolAdminDashboard';
 import TeacherDashboard from './pages/teacher/TeacherDashboard';
@@ -54,6 +55,7 @@ export default function App() {
           <Routes>
             {/* PUBLIC ROUTE */}
             <Route path="/login" element={<LoginPortal />} />
+            <Route path="/register" element={<RegisterPortal />} /> {/* RUTE REGISTER BARU */}
             
             {/* SUPER ADMIN ROUTE (Master SaaS) */}
             <Route path="/master/*" element={
@@ -62,8 +64,7 @@ export default function App() {
               </ProtectedRoute>
             } />
 
-            {/* PERBAIKAN RUTE: SCHOOL ADMIN ROUTE (Operator Sekolah) */}
-            {/* Diubah dari /admin-sekolah/ menjadi /school-admin/ agar cocok dengan LoginPortal */}
+            {/* SCHOOL ADMIN ROUTE (Operator Sekolah) */}
             <Route path="/school-admin/*" element={
               <ProtectedRoute allowedRoles={['admin_sekolah']}>
                 <SchoolAdminDashboard />
