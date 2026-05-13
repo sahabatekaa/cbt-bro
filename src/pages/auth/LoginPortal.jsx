@@ -6,7 +6,7 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } f
 import { ref, set, push, onValue, get, update } from 'firebase/database';
 import { GraduationCap, User, Lock, Key, LayoutGrid, Users, CheckCircle, RefreshCw, ShieldCheck } from 'lucide-react';
 
-const APP_VERSION = "3.0.0 Hybrid";
+const APP_VERSION = "3.0.0 SaaS";
 
 export default function LoginPortal() {
   const navigate = useNavigate();
