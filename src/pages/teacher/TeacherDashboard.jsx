@@ -23,6 +23,8 @@ export default function TeacherDashboard() {
   
   const [teacherProfile, setTeacherProfile] = useState(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isLoadingSchool, setIsLoadingSchool] = useState(true); // Barikade Penahan Suspend
+
   const [tempProfileName, setTempProfileName] = useState('');
   const [newPassword, setNewPassword] = useState(''); 
 
@@ -33,7 +35,7 @@ export default function TeacherDashboard() {
   
   // Data Global 
   const [data, setData] = useState({ live: [], bank: [], lead: [], sessions: [], classes: [], subjects: [] });
-  const [schoolInfo, setSchoolInfo] = useState(null); // State untuk nyimpan info sekolah (termasuk status suspend)
+  const [schoolInfo, setSchoolInfo] = useState(null); 
 
   const [showModal, setShowModal] = useState(false);
   const [activeMonitorToken, setActiveMonitorToken] = useState(localStorage.getItem('activeMonitorToken') || '');
@@ -99,6 +101,7 @@ export default function TeacherDashboard() {
       } else {
         setTeacherProfile(null);
         setIsLoadingProfile(false);
+        setIsLoadingSchool(false); // Lepas barikade
       }
     });
     return () => unsubscribeAuth();
@@ -133,16 +136,20 @@ export default function TeacherDashboard() {
     fetchData('master_subjects', 'subjects');
   }, [currentUserEmail]);
 
-  // 3. Tarik Status Sekolah untuk Tembok Suspend
+  // 3. Tarik Status Sekolah untuk Tembok Suspend (CRITICAL FIX)
   useEffect(() => {
-    if (!schoolId) return;
-    const schoolRef = dbRef(db, `clients/${schoolId}`);
+    if (!schoolId) {
+       setIsLoadingSchool(false);
+       return;
+    }
+    const schoolRef = dbRef(db, `clients/${schoolId.toLowerCase()}`);
     const unsubSchool = onValue(schoolRef, snap => {
        if(snap.exists()) {
           setSchoolInfo(snap.val());
        } else {
           setSchoolInfo(null);
        }
+       setIsLoadingSchool(false); // Konfirmasi data selesai ditarik
     });
     return () => unsubSchool();
   }, [schoolId]);
@@ -170,9 +177,9 @@ export default function TeacherDashboard() {
   const myLeaderboard = safeLead.filter(s => s?.teacherEmail === currentUserEmail).sort((a,b) => (Number(b?.score) || 0) - (Number(a?.score) || 0));
   const monitoredStudents = safeLive.filter(s => s?.token === activeMonitorToken);
 
-  // MENGGUNAKAN MASTER DATA DARI ADMIN SEKOLAH
-  const schoolClasses = safeClasses.filter(c => c?.schoolId === schoolId);
-  const schoolSubjects = safeSubjects.filter(s => s?.schoolId === schoolId);
+  // MENGGUNAKAN MASTER DATA DARI ADMIN SEKOLAH (Case-Insensitive)
+  const schoolClasses = safeClasses.filter(c => c?.schoolId?.toLowerCase() === schoolId.toLowerCase());
+  const schoolSubjects = safeSubjects.filter(s => s?.schoolId?.toLowerCase() === schoolId.toLowerCase());
 
   // Filter untuk Bank Soal
   const availableBankMapel = [...new Set(myQuestions.map(q => q?.mapel).filter(Boolean))];
@@ -493,12 +500,12 @@ export default function TeacherDashboard() {
     </div>
   );
 
-  // --- LOADING DAN PENDING SCREEN ---
-  if (isLoadingProfile) {
+  // --- LOADING DAN PENDING SCREEN (DENGAN PENAHAN SUSPEND) ---
+  if (isLoadingProfile || isLoadingSchool) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
          <Loader2 size={40} className="text-emerald-500 animate-spin" />
-         <p className="text-sm font-bold text-slate-500 tracking-widest uppercase animate-pulse">Memverifikasi Data Guru...</p>
+         <p className="text-sm font-bold text-slate-500 tracking-widest uppercase animate-pulse">Memverifikasi Akses Instansi...</p>
       </div>
     );
   }
@@ -525,7 +532,7 @@ export default function TeacherDashboard() {
     );
   }
 
-  // --- PENANGKAL GERBANG SUSPEND ---
+  // --- PENANGKAL GERBANG SUSPEND (FIXED) ---
   if (schoolInfo && schoolInfo.status === 'suspended') {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center animate-in fade-in duration-500">

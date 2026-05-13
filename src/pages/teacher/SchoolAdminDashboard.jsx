@@ -10,7 +10,7 @@ import {
   XCircle, KeyRound, Menu, X, ShieldCheck, UserCog, BarChart, 
   FileText, Download, Loader2, AlertTriangle, LayoutDashboard, 
   Building2, MapPin, Briefcase, Phone, Crown, GraduationCap, 
-  Database, BookOpen, Radio, Upload, Image as ImageIcon, MessageCircle 
+  Database, BookOpen, Radio, Upload, Image as ImageIcon, MessageCircle, ShieldAlert 
 } from 'lucide-react';
 
 export default function SchoolAdminDashboard() {
@@ -20,6 +20,8 @@ export default function SchoolAdminDashboard() {
   
   const [adminProfile, setAdminProfile] = useState(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true); 
+  // PERBAIKAN: Barikade penahan agar Dashboard tidak bocor sebelum data suspend ditarik
+  const [isLoadingSchool, setIsLoadingSchool] = useState(true); 
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -68,7 +70,10 @@ export default function SchoolAdminDashboard() {
 
   // 2. Tarik Data Global Terpadu 
   useEffect(() => {
-    if (schoolId === 'UNREGISTERED') return; 
+    if (schoolId === 'UNREGISTERED') {
+      setIsLoadingSchool(false); // Lepas loading jika tidak punya sekolah
+      return; 
+    }
 
     const fetchData = (path, key) => onValue(ref(db, path), snap => {
       const val = snap.val();
@@ -102,6 +107,8 @@ export default function SchoolAdminDashboard() {
        } else {
           setSchoolInfo(null);
        }
+       // PERBAIKAN: Konfirmasi data selesai ditarik, izinkan sistem memproses (Suspend atau Normal)
+       setIsLoadingSchool(false); 
     });
 
     return () => unsubSchool();
@@ -128,7 +135,6 @@ export default function SchoolAdminDashboard() {
   const safeClasses = Array.isArray(data.classes) ? data.classes : [];
   const safeSubjects = Array.isArray(data.subjects) ? data.subjects : [];
 
-  // PERBAIKAN: Pencocokan schoolId secara Case-Insensitive agar Guru Pending tidak Hilang/Blank
   const schoolTeachers = safeUsers.filter(u => u?.schoolId?.toLowerCase() === schoolId.toLowerCase() && u?.role === 'teacher');
   const pendingTeachers = schoolTeachers.filter(u => u?.status === 'pending');
   const activeTeachers = schoolTeachers.filter(u => u?.status !== 'pending');
@@ -215,7 +221,8 @@ export default function SchoolAdminDashboard() {
   );
 
   // --- LAYAR PERLINDUNGAN AKSES ---
-  if (isLoadingProfile) return (<div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4"><Loader2 size={40} className="text-blue-500 animate-spin" /><p className="text-sm font-bold text-slate-500 tracking-widest uppercase animate-pulse">Memverifikasi Akses...</p></div>);
+  // PERBAIKAN: Menambahkan isLoadingSchool untuk menahan UI
+  if (isLoadingProfile || isLoadingSchool) return (<div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4"><Loader2 size={40} className="text-blue-500 animate-spin" /><p className="text-sm font-bold text-slate-500 tracking-widest uppercase animate-pulse">Memverifikasi Status Instansi...</p></div>);
   if (!adminProfile) return (<div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center"><AlertTriangle size={60} className="text-red-500 mb-4" /><p className="text-xl font-black text-slate-700 mb-2">Sesi Terputus</p><p className="text-sm font-bold text-slate-500 max-w-md mb-6">Autentikasi gagal. Silakan login kembali.</p><button onClick={() => navigate('/login')} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-sm">Kembali ke Login</button></div>);
 
   // PENANGKAL 1: CEK STATUS SUSPEND DARI MASTER
@@ -256,7 +263,6 @@ export default function SchoolAdminDashboard() {
 
       {isMobileMenuOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />}
       
-      {/* SIDEBAR */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
         <div className="p-6 flex items-center gap-3">
            <ShieldCheck size={28} className="text-blue-600"/>
@@ -294,7 +300,6 @@ export default function SchoolAdminDashboard() {
       </aside>
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        {/* HEADER UTAMA */}
         <header className="bg-white border-b border-slate-200 p-4 md:px-8 flex justify-between items-center z-10 print:hidden">
           <div className="flex items-center gap-3">
             <button className="md:hidden p-2 bg-slate-100 rounded-lg text-blue-600" onClick={() => setIsMobileMenuOpen(true)}><Menu size={20}/></button>
@@ -315,7 +320,6 @@ export default function SchoolAdminDashboard() {
             </div>
           )}
 
-          {/* TAB DASHBOARD UTAMA */}
           {activeTab === 'dashboard' && (
              <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="bg-[#2563EB] rounded-[24px] p-8 md:p-10 text-white shadow-lg relative overflow-hidden mb-6">
@@ -349,7 +353,6 @@ export default function SchoolAdminDashboard() {
              </div>
           )}
 
-          {/* TAB PROFIL SEKOLAH */}
           {activeTab === 'sekolah' && (
              <div className="max-w-4xl mx-auto animate-in fade-in duration-300">
                 <div className="bg-white p-8 rounded-[24px] shadow-sm border border-slate-200">
@@ -366,7 +369,6 @@ export default function SchoolAdminDashboard() {
              </div>
           )}
 
-          {/* TAB MASTER DATA */}
           {activeTab === 'master-data' && (
             <div className="max-w-6xl mx-auto animate-in fade-in duration-300">
                <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-200 mb-6">
@@ -380,7 +382,6 @@ export default function SchoolAdminDashboard() {
             </div>
           )}
 
-          {/* TAB MANAJEMEN SISWA */}
           {activeTab === 'siswa' && (
             <div className="max-w-6xl mx-auto animate-in fade-in duration-300">
               <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleImportStudents} className="hidden" />
@@ -394,7 +395,6 @@ export default function SchoolAdminDashboard() {
             </div>
           )}
           
-          {/* TAB MANAJEMEN GURU */}
           {activeTab === 'guru' && (
             <div className="max-w-6xl mx-auto animate-in fade-in duration-300">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-[24px] shadow-sm border border-slate-200 mb-6">
@@ -405,17 +405,13 @@ export default function SchoolAdminDashboard() {
                  <button onClick={() => { setGuruForm({name:'', email:'', password:''}); setShowAddGuruModal(true); }} disabled={schoolId === 'UNREGISTERED'} className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-black flex items-center gap-2"><Plus size={18}/> Tambah Guru Baru</button>
               </div>
 
-              {/* RESTORASI: KOTAK GURU PENDING YANG HILANG KARENA MINIFY */}
               {pendingTeachers.length > 0 && (
                 <div className="bg-orange-50 rounded-2xl border border-orange-200 overflow-hidden shadow-sm p-5 space-y-4 mb-6">
                   <div className="font-black text-orange-700 flex items-center gap-2"><Users size={20}/> Menunggu Persetujuan ({pendingTeachers.length})</div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {pendingTeachers.map(t => (
                       <div key={t.id} className="bg-white p-4 rounded-xl border border-orange-200 flex flex-col justify-between gap-3 shadow-sm">
-                        <div>
-                          <p className="font-black text-slate-800 text-sm">{t?.name || 'Tanpa Nama'}</p>
-                          <p className="font-medium text-slate-500 text-xs mt-0.5">{t?.email || '-'}</p>
-                        </div>
+                        <div><p className="font-black text-slate-800 text-sm">{t?.name || 'Tanpa Nama'}</p><p className="font-medium text-slate-500 text-xs mt-0.5">{t?.email || '-'}</p></div>
                         <div className="flex gap-2 w-full border-t border-slate-100 pt-3">
                           <button onClick={() => approveTeacher(t.id)} className="flex-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 py-2 rounded-lg text-xs font-bold transition-all flex justify-center items-center gap-1"><CheckCircle size={16}/> Terima</button>
                           <button onClick={() => rejectTeacher(t.id)} className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-2 rounded-lg text-xs font-bold transition-all flex justify-center items-center gap-1"><XCircle size={16}/> Tolak</button>
@@ -426,7 +422,6 @@ export default function SchoolAdminDashboard() {
                 </div>
               )}
 
-              {/* TABEL GURU AKTIF (Dimekarkan agar aman dari Error) */}
               <div className="bg-white rounded-[20px] border border-slate-200 overflow-x-auto shadow-sm">
                 <table className="w-full text-left text-sm whitespace-nowrap">
                   <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
@@ -469,7 +464,6 @@ export default function SchoolAdminDashboard() {
             </div>
           )}
 
-          {/* TAB MONITOR UJIAN GLOBAL */}
           {activeTab === 'monitor' && (
             <div className="max-w-6xl mx-auto animate-in fade-in duration-300">
                <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-200 mb-6"><h3 className="text-xl font-black text-slate-800 flex items-center gap-2 mb-1"><Radio className="text-blue-600"/> Monitor Ujian Global</h3><p className="text-sm text-slate-500">Pantau semua jadwal dan sesi ujian.</p></div>
@@ -488,11 +482,9 @@ export default function SchoolAdminDashboard() {
             </div>
           )}
 
-          {/* TAB REKAP NILAI SEKOLAH (LAYOUT HORIZONTAL KOMPAK) */}
           {activeTab === 'recap' && (
             <div className="max-w-7xl mx-auto print:max-w-full animate-in fade-in duration-300">
               
-              {/* TOOLBAR HORIZONTAL BARU */}
               <div className="bg-white rounded-[24px] border border-slate-200 shadow-sm p-6 print:hidden mb-6">
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
                    <div>
@@ -517,7 +509,7 @@ export default function SchoolAdminDashboard() {
                 </div>
               </div>
 
-              {/* TAMPILAN PRINT BERDASARKAN MODE */}
+              {/* TAMPILAN PRINT */}
               <div className={`${printMode === 'rekap' ? 'hidden print:block' : 'hidden'}`}>
                 <OfficialHeader />
                 <h3 className="text-center font-black text-lg mb-6 underline">DAFTAR NILAI UJIAN</h3>
@@ -546,7 +538,6 @@ export default function SchoolAdminDashboard() {
                 </table>
               </div>
 
-              {/* UI TABEL REKAP BROWSER (DILEBARKAN AGAR AMAN DARI ERROR) */}
               <div className="bg-white rounded-[20px] border border-slate-200 overflow-x-auto shadow-sm print:hidden">
                 <table className="w-full text-left text-sm whitespace-nowrap">
                   <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
