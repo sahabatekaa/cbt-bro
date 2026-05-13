@@ -62,8 +62,9 @@ export default function App() {
               </ProtectedRoute>
             } />
 
-            {/* SCHOOL ADMIN ROUTE (Operator Sekolah) */}
-            <Route path="/admin-sekolah/*" element={
+            {/* PERBAIKAN RUTE: SCHOOL ADMIN ROUTE (Operator Sekolah) */}
+            {/* Diubah dari /admin-sekolah/ menjadi /school-admin/ agar cocok dengan LoginPortal */}
+            <Route path="/school-admin/*" element={
               <ProtectedRoute allowedRoles={['admin_sekolah']}>
                 <SchoolAdminDashboard />
               </ProtectedRoute>
