@@ -2,9 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { db, auth } from '../../config/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { ref, set, push, onValue, get, update } from 'firebase/database';
-import { GraduationCap, User, Lock, Key, LayoutGrid, Users, CheckCircle, RefreshCw, ShieldCheck, UserPlus, Loader2, ArrowLeft } from 'lucide-react';
+import { GraduationCap, User, Lock, Key, LayoutGrid, Users, CheckCircle, RefreshCw, ShieldCheck, Loader2 } from 'lucide-react';
 
 const APP_VERSION = "2.0.0";
 
@@ -12,29 +12,23 @@ export default function LoginPortal() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // State UI
-  const [currentView, setCurrentView] = useState('login'); // login | admin-login | proctor-login
+  const [currentView, setCurrentView] = useState('login'); 
   const [darkMode, setDarkMode] = useState(localStorage.getItem('darkMode') === 'true');
   const [logoClicks, setLogoClicks] = useState(0);
-  const [isRegistering, setIsRegistering] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false); 
   const [isStarting, setIsStarting] = useState(false);
   
-  // State Form Admin/Guru Baru
+  // State Form Admin
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [schoolCode, setSchoolCode] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
 
-  // Data Ujian
+  // Data Ujian Siswa
   const [activeSessions, setActiveSessions] = useState([]);
   const [scannedToken, setScannedToken] = useState('');
 
-  // ==========================================
-  // BLOKIR TOMBOL BACK FISIK HP (ANTI KELUAR APK)
-  // ==========================================
+  // Blokir Tombol Back
   useEffect(() => {
     window.history.pushState(null, null, window.location.href);
     const handleBackButton = () => {
@@ -44,9 +38,7 @@ export default function LoginPortal() {
     return () => window.removeEventListener('popstate', handleBackButton);
   }, [currentView]);
 
-  // ==========================================
-  // MONITORING SINKRONISASI GLOBAL (ANTI-BLANK)
-  // ==========================================
+  // Pantau Versi
   useEffect(() => {
     const versionRef = ref(db, 'settings/activeVersion');
     const unsub = onValue(versionRef, (snapshot) => {
@@ -64,7 +56,7 @@ export default function LoginPortal() {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  // Tarik Sesi Aktif dari Root DB
+  // Tarik Sesi Ujian Aktif
   useEffect(() => {
     const unsub = onValue(ref(db, 'exam_sessions'), (snapshot) => {
       if (snapshot.val()) {
@@ -76,7 +68,7 @@ export default function LoginPortal() {
     return () => unsub();
   }, []);
 
-  // Cek URL untuk Token QR Code
+  // Tangkap Token QR
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const tokenFromUrl = params.get('token');
@@ -88,7 +80,7 @@ export default function LoginPortal() {
   const availableClasses = [...new Set(activeSessions.map(s => s.kelas).filter(Boolean))];
 
   // ==========================================
-  // LOGIKA LOGIN SISWA & ANTI-JOKI
+  // LOGIKA LOGIN SISWA
   // ==========================================
   const handleStudentStart = async (e) => {
     e.preventDefault();
@@ -99,16 +91,13 @@ export default function LoginPortal() {
     const sClass = e.target.studentClass.value;
     const tokenInput = e.target.token.value.toUpperCase();
     
-    // Validasi Sesi & Auto-Deteksi SubKelas dari Token
     const validSession = activeSessions.find(s => s.token === tokenInput && s.kelas === sClass);
     if (!validSession) {
        setIsStarting(false);
        return alert("❌ AKSES DITOLAK: Token tidak ditemukan atau Kelas Anda salah!");
     }
 
-    // Ekstrak otomatis subKelas dari data sesi yang dibuat Guru
     const autoSubKelas = validSession.subKelas || '-';
-
     const now = new Date();
     const timeNow = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
@@ -164,7 +153,7 @@ export default function LoginPortal() {
           id: newRef.key, 
           name: studentNameInput, 
           class: sClass, 
-          subKelas: autoSubKelas, // Disisipkan otomatis ke pangkalan data
+          subKelas: autoSubKelas,
           token: tokenInput, 
           mapel: validSession.mapel, 
           teacherEmail: validSession.teacherEmail, 
@@ -178,7 +167,6 @@ export default function LoginPortal() {
       }
 
       localStorage.setItem('studentData', JSON.stringify(finalData));
-      
       setIsStarting(false);
       navigate('/exam');
     } catch (error) { 
@@ -198,11 +186,9 @@ export default function LoginPortal() {
     try {
       const userCred = await signInWithEmailAndPassword(auth, email, password);
       
-      // Deteksi Master Admin
       if (userCred.user.email === 'admin@sekolah.com') {
           navigate('/master');
       } else {
-        // Cek role di database
         const snap = await get(ref(db, `users/${userCred.user.uid}`));
         if (snap.exists()) {
            const userData = snap.val();
@@ -223,57 +209,6 @@ export default function LoginPortal() {
       }
     } catch (err) { 
       setErrorMsg("Login Gagal! Periksa email dan password."); 
-    } finally {
-      setIsLoadingAdmin(false);
-    }
-  };
-
-  const handleAdminRegister = async (e) => {
-    e.preventDefault();
-    setErrorMsg('');
-    setIsLoadingAdmin(true);
-
-    if (!schoolCode) {
-      setErrorMsg('Kode Instansi wajib diisi!');
-      setIsLoadingAdmin(false);
-      return;
-    }
-
-    try {
-      const cleanSchoolCode = schoolCode.trim().toLowerCase();
-
-      // 1. Validasi Kode Sekolah
-      const schoolSnap = await get(ref(db, `clients/${cleanSchoolCode}`));
-      if (!schoolSnap.exists()) {
-        throw new Error(`Kode Sekolah "${schoolCode}" tidak terdaftar. Hubungi TU.`);
-      }
-
-      // 2. Buat Akun
-      const userCred = await createUserWithEmailAndPassword(auth, email, password);
-      
-      // 3. Simpan dengan status PENDING
-      await set(ref(db, `users/${userCred.user.uid}`), { 
-          name: name, 
-          email: email, 
-          role: 'teacher', 
-          schoolId: cleanSchoolCode,
-          status: 'pending', 
-          createdAt: Date.now() 
-      });
-      
-      await signOut(auth); 
-      alert(`DAFTAR BERHASIL!\nAkun Anda terhubung dengan Instansi: ${cleanSchoolCode.toUpperCase()}.\nSilakan tunggu konfirmasi Admin Tata Usaha.`); 
-      
-      setIsRegistering(false);
-      setEmail(''); setPassword(''); setName(''); setSchoolCode('');
-    } catch (err) { 
-      if (err.code === 'auth/email-already-in-use') {
-        setErrorMsg('Email ini sudah terdaftar.');
-      } else if (err.code === 'auth/weak-password') {
-        setErrorMsg('Password minimal 6 karakter.');
-      } else {
-        setErrorMsg(err.message.replace("Firebase: ", ""));
-      }
     } finally {
       setIsLoadingAdmin(false);
     }
@@ -320,7 +255,7 @@ export default function LoginPortal() {
               <form onSubmit={handleStudentStart} className="space-y-4">
                 <div className="relative">
                     <User className="absolute left-4 top-3.5 text-gray-400" size={20} />
-                    <input name="studentName" required placeholder="Nama Lengkap" className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 font-bold" />
+                    <input name="studentName" required placeholder="Nama Lengkap Siswa" className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 font-bold" />
                 </div>
                 
                 <div className="relative w-full">
@@ -338,7 +273,7 @@ export default function LoginPortal() {
                     value={scannedToken}
                     onChange={e => setScannedToken(e.target.value.toUpperCase())}
                     required 
-                    placeholder="Kode Token" 
+                    placeholder="Kode Token Ujian" 
                     className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-900 dark:text-white border border-gray-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 ring-emerald-400 font-mono uppercase tracking-widest font-black text-center" 
                   />
                 </div>
@@ -356,17 +291,15 @@ export default function LoginPortal() {
         )}
 
         {/* ==========================================
-            HALAMAN RAHASIA: LOGIN ADMIN & GURU (UI BARU)
+            HALAMAN RAHASIA: LOGIN ADMIN & GURU
         ========================================== */}
         {currentView === 'admin-login' && (
           <div className="absolute inset-0 z-50 flex items-center justify-center min-h-screen p-4 md:p-6 bg-[#0f172a] animate-in fade-in duration-300">
             <div className="w-full max-w-[400px] bg-white rounded-[24px] p-8 shadow-2xl">
               
               <div className="flex items-center gap-2 mb-8">
-                {isRegistering ? <UserPlus className="text-emerald-500" size={24} /> : <Lock className="text-emerald-500" size={24} />}
-                <h2 className="text-[22px] font-black text-slate-800 tracking-tight">
-                  {isRegistering ? 'Daftar Guru Baru' : 'Akses Sistem'}
-                </h2>
+                <Lock className="text-emerald-500" size={24} />
+                <h2 className="text-[22px] font-black text-slate-800 tracking-tight">Akses Sistem</h2>
               </div>
 
               {errorMsg && (
@@ -375,85 +308,43 @@ export default function LoginPortal() {
                 </div>
               )}
 
-              {!isRegistering ? (
-                <form onSubmit={handleAdminLogin} className="space-y-4">
-                  <div>
-                    <input 
-                      type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                      placeholder="Email Terdaftar" 
-                      className="w-full px-4 py-3.5 border border-emerald-300 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all bg-emerald-50/30"
-                    />
-                  </div>
-                  <div>
-                    <input 
-                      type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Password" 
-                      className="w-full px-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all"
-                    />
-                  </div>
+              <form onSubmit={handleAdminLogin} className="space-y-4">
+                <div>
+                  <input 
+                    type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Email Terdaftar" 
+                    className="w-full px-4 py-3.5 border border-emerald-300 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all bg-emerald-50/30"
+                  />
+                </div>
+                <div>
+                  <input 
+                    type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Password" 
+                    className="w-full px-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all"
+                  />
+                </div>
 
-                  <div className="pt-2">
-                    <button type="submit" disabled={isLoadingAdmin} className="w-full bg-[#0f172a] hover:bg-slate-800 text-white py-3.5 rounded-xl text-sm font-black tracking-widest transition-all shadow-md active:scale-[0.98] disabled:opacity-70 flex justify-center items-center gap-2">
-                      {isLoadingAdmin ? <Loader2 size={18} className="animate-spin" /> : 'LOGIN SISTEM'}
-                    </button>
-                  </div>
+                <div className="pt-2">
+                  <button type="submit" disabled={isLoadingAdmin} className="w-full bg-[#0f172a] hover:bg-slate-800 text-white py-3.5 rounded-xl text-sm font-black tracking-widest transition-all shadow-md active:scale-[0.98] disabled:opacity-70 flex justify-center items-center gap-2">
+                    {isLoadingAdmin ? <Loader2 size={18} className="animate-spin" /> : 'LOGIN SISTEM'}
+                  </button>
+                </div>
 
-                  <div className="pt-2 space-y-3 text-center">
-                    <button type="button" onClick={() => setCurrentView('proctor-login')} className="w-full bg-blue-50 hover:bg-blue-100 text-blue-600 py-3.5 rounded-xl text-sm font-black transition-all flex items-center justify-center gap-2">
-                      <ShieldCheck size={18} /> Masuk Sebagai Pengawas Ruang
-                    </button>
-                    <button type="button" onClick={() => { setIsRegistering(true); setErrorMsg(''); setEmail(''); setPassword(''); }} className="text-[11px] font-black text-emerald-600 hover:text-emerald-700 uppercase tracking-widest transition-colors block w-full pt-2">
-                      Belum punya akun? Daftar Guru Baru
-                    </button>
-                    <button type="button" onClick={() => setCurrentView('login')} className="text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-colors block w-full pt-1">
-                      Batal, Kembali ke Portal Siswa
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <form onSubmit={handleAdminRegister} className="space-y-4">
-                  <div>
-                    <input 
-                      type="text" required value={name} onChange={(e) => setName(e.target.value)}
-                      placeholder="Nama Lengkap & Gelar" 
-                      className="w-full px-4 py-3.5 border border-emerald-300 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all bg-emerald-50/30"
-                    />
-                  </div>
-                  <div>
-                    <input 
-                      type="text" required value={schoolCode} onChange={(e) => setSchoolCode(e.target.value)}
-                      placeholder="Kode Instansi / Sekolah (Cth: SEKOLAH-01)" 
-                      className="w-full px-4 py-3.5 border border-emerald-300 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-bold text-slate-800 placeholder-slate-400 transition-all bg-emerald-50/30 uppercase"
-                    />
-                  </div>
-                  <div>
-                    <input 
-                      type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                      placeholder="Email Baru" 
-                      className="w-full px-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all"
-                    />
-                  </div>
-                  <div>
-                    <input 
-                      type="password" required minLength="6" value={password} onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Buat Password" 
-                      className="w-full px-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 text-sm font-semibold text-slate-800 placeholder-slate-400 transition-all"
-                    />
-                  </div>
-
-                  <div className="pt-2">
-                    <button type="submit" disabled={isLoadingAdmin} className="w-full bg-emerald-500 hover:bg-emerald-400 text-white py-3.5 rounded-xl text-sm font-black tracking-widest transition-all shadow-md shadow-emerald-500/30 active:scale-[0.98] disabled:opacity-70 flex justify-center items-center gap-2">
-                      {isLoadingAdmin ? <Loader2 size={18} className="animate-spin" /> : 'DAFTARKAN AKUN'}
-                    </button>
-                  </div>
-
-                  <div className="pt-2 text-center">
-                    <button type="button" onClick={() => { setIsRegistering(false); setErrorMsg(''); setEmail(''); setPassword(''); }} className="text-[11px] font-bold text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center gap-1 w-full">
-                      <ArrowLeft size={12} /> Batal, kembali login
-                    </button>
-                  </div>
-                </form>
-              )}
+                <div className="pt-2 space-y-3 text-center">
+                  <button type="button" onClick={() => setCurrentView('proctor-login')} className="w-full bg-blue-50 hover:bg-blue-100 text-blue-600 py-3.5 rounded-xl text-sm font-black transition-all flex items-center justify-center gap-2">
+                    <ShieldCheck size={18} /> Masuk Sebagai Pengawas Ruang
+                  </button>
+                  
+                  {/* TOMBOL DAFTAR DIARAHKAN KE PAGE REGISTER */}
+                  <button type="button" onClick={() => navigate('/register')} className="text-[11px] font-black text-emerald-600 hover:text-emerald-700 uppercase tracking-widest transition-colors block w-full pt-2">
+                    Belum punya akun? Daftar Guru Baru
+                  </button>
+                  
+                  <button type="button" onClick={() => setCurrentView('login')} className="text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-colors block w-full pt-1">
+                    Batal, Kembali ke Portal Siswa
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

@@ -26,7 +26,7 @@ export default function SchoolAdminDashboard() {
   
   // Data Global 
   const [data, setData] = useState({ users: [], lead: [], students: [], classes: [], subjects: [], sessions: [] });
-  const [schoolInfo, setSchoolInfo] = useState(null); // Nilai awal null
+  const [schoolInfo, setSchoolInfo] = useState(null); 
   
   // Forms
   const [schoolForm, setSchoolForm] = useState({ alamat: '', kepalaSekolah: '', nipKepalaSekolah: '', telepon: '', logoUrl: '' });
@@ -90,7 +90,7 @@ export default function SchoolAdminDashboard() {
     fetchData('master_subjects', 'subjects');
     fetchData('exam_sessions', 'sessions');
 
-    const schoolRef = ref(db, `clients/${schoolId}`);
+    const schoolRef = ref(db, `clients/${schoolId.toLowerCase()}`);
     const unsubSchool = onValue(schoolRef, snap => {
        if(snap.exists()) {
           const sData = snap.val();
@@ -118,7 +118,7 @@ export default function SchoolAdminDashboard() {
   // --- MANAJEMEN PROFIL SEKOLAH ---
   const handleUpdateSchool = (e) => {
     e.preventDefault();
-    update(ref(db, `clients/${schoolId}`), schoolForm).then(() => alert("Profil Diperbarui!")).catch(err => alert("Gagal: " + err.message));
+    update(ref(db, `clients/${schoolId.toLowerCase()}`), schoolForm).then(() => alert("Profil Diperbarui!")).catch(err => alert("Gagal: " + err.message));
   };
 
   const safeUsers = Array.isArray(data.users) ? data.users : [];
@@ -128,7 +128,8 @@ export default function SchoolAdminDashboard() {
   const safeClasses = Array.isArray(data.classes) ? data.classes : [];
   const safeSubjects = Array.isArray(data.subjects) ? data.subjects : [];
 
-  const schoolTeachers = safeUsers.filter(u => u?.schoolId === schoolId && u?.role === 'teacher');
+  // PERBAIKAN: Pencocokan schoolId secara Case-Insensitive agar Guru Pending tidak Hilang/Blank
+  const schoolTeachers = safeUsers.filter(u => u?.schoolId?.toLowerCase() === schoolId.toLowerCase() && u?.role === 'teacher');
   const pendingTeachers = schoolTeachers.filter(u => u?.status === 'pending');
   const activeTeachers = schoolTeachers.filter(u => u?.status !== 'pending');
   const schoolTeacherEmails = schoolTeachers.map(t => t?.email).filter(Boolean);
@@ -136,19 +137,19 @@ export default function SchoolAdminDashboard() {
   const schoolSessionsTokens = safeSessions.filter(s => schoolTeacherEmails.includes(s?.teacherEmail)).map(s => s?.token).filter(Boolean);
   const schoolLeaderboard = safeLead.filter(l => schoolTeacherEmails.includes(l?.teacherEmail) || schoolSessionsTokens.includes(l?.token));
   
-  const schoolStudents = safeStudents.filter(s => s?.schoolId === schoolId);
-  const schoolClasses = safeClasses.filter(c => c?.schoolId === schoolId);
-  const schoolSubjects = safeSubjects.filter(s => s?.schoolId === schoolId);
+  const schoolStudents = safeStudents.filter(s => s?.schoolId?.toLowerCase() === schoolId.toLowerCase());
+  const schoolClasses = safeClasses.filter(c => c?.schoolId?.toLowerCase() === schoolId.toLowerCase());
+  const schoolSubjects = safeSubjects.filter(s => s?.schoolId?.toLowerCase() === schoolId.toLowerCase());
   const schoolSessions = safeSessions.filter(s => schoolTeacherEmails.includes(s?.teacherEmail)).sort((a,b) => (b?.timestamp || 0) - (a?.timestamp || 0));
 
-  const handleAddClass = (e) => { e.preventDefault(); if(!classForm) return; push(ref(db, 'master_classes'), { name: classForm, schoolId }).then(() => setClassForm('')); };
+  const handleAddClass = (e) => { e.preventDefault(); if(!classForm) return; push(ref(db, 'master_classes'), { name: classForm, schoolId: schoolId.toLowerCase() }).then(() => setClassForm('')); };
   const handleDeleteClass = (id) => { if(window.confirm("Hapus kelas ini?")) remove(ref(db, `master_classes/${id}`)); };
-  const handleAddSubject = (e) => { e.preventDefault(); if(!subjectForm) return; push(ref(db, 'master_subjects'), { name: subjectForm, schoolId }).then(() => setSubjectForm('')); };
+  const handleAddSubject = (e) => { e.preventDefault(); if(!subjectForm) return; push(ref(db, 'master_subjects'), { name: subjectForm, schoolId: schoolId.toLowerCase() }).then(() => setSubjectForm('')); };
   const handleDeleteSubject = (id) => { if(window.confirm("Hapus Mapel ini?")) remove(ref(db, `master_subjects/${id}`)); };
 
   const handleAddStudent = (e) => {
     e.preventDefault();
-    push(ref(db, 'students'), { ...studentForm, schoolId, createdAt: Date.now() }).then(() => { alert("Siswa ditambahkan!"); setShowAddStudentModal(false); setStudentForm({ name: '', nisn: '', kelas: '', subKelas: '' }); });
+    push(ref(db, 'students'), { ...studentForm, schoolId: schoolId.toLowerCase(), createdAt: Date.now() }).then(() => { alert("Siswa ditambahkan!"); setShowAddStudentModal(false); setStudentForm({ name: '', nisn: '', kelas: '', subKelas: '' }); });
   };
   const handleDeleteStudent = (id) => { if(window.confirm("Hapus siswa ini?")) remove(ref(db, `students/${id}`)); };
   const handleImportStudents = (e) => {
@@ -158,7 +159,7 @@ export default function SchoolAdminDashboard() {
       try {
         const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
         let count = 0;
-        d.forEach(row => { if (row.Nama && row.Kelas) { push(ref(db, 'students'), { name: String(row.Nama), nisn: String(row.NISN || ''), kelas: String(row.Kelas), subKelas: String(row.SubKelas || ''), schoolId, createdAt: Date.now() }); count++; } });
+        d.forEach(row => { if (row.Nama && row.Kelas) { push(ref(db, 'students'), { name: String(row.Nama), nisn: String(row.NISN || ''), kelas: String(row.Kelas), subKelas: String(row.SubKelas || ''), schoolId: schoolId.toLowerCase(), createdAt: Date.now() }); count++; } });
         alert(`${count} Siswa berhasil di-import!`); if(fileInputRef.current) fileInputRef.current.value = '';
       } catch(err) { alert("Gagal Import: Format Excel salah."); }
     }; reader.readAsBinaryString(file);
@@ -170,12 +171,14 @@ export default function SchoolAdminDashboard() {
 
   const handleAddGuru = async (e) => {
     e.preventDefault(); if (schoolId === 'UNREGISTERED') return alert("Akses dibatasi.");
-    try { const newAuth = getAuth(); const userCred = await createUserWithEmailAndPassword(newAuth, guruForm.email, guruForm.password); await set(ref(db, `users/${userCred.user.uid}`), { name: guruForm.name, email: guruForm.email, role: 'teacher', schoolId, status: 'active', createdAt: Date.now() }); alert("Guru dibuat!"); setShowAddGuruModal(false); setGuruForm({ name: '', email: '', password: '' }); } catch (err) { alert("Gagal: " + err.message); }
+    try { const newAuth = getAuth(); const userCred = await createUserWithEmailAndPassword(newAuth, guruForm.email, guruForm.password); await set(ref(db, `users/${userCred.user.uid}`), { name: guruForm.name, email: guruForm.email, role: 'teacher', schoolId: schoolId.toLowerCase(), status: 'active', createdAt: Date.now() }); alert("Guru dibuat!"); setShowAddGuruModal(false); setGuruForm({ name: '', email: '', password: '' }); } catch (err) { alert("Gagal: " + err.message); }
   };
   const handleUpdateGuru = (e) => { e.preventDefault(); update(ref(db, `users/${editGuruId}`), { name: guruForm.name }); alert("Diperbarui!"); setShowEditGuruModal(false); };
+  
+  // FUNGSI APPROVE & REJECT GURU PENDING
   const approveTeacher = (id) => update(ref(db, `users/${id}`), { status: 'active' });
-  const rejectTeacher = (id) => { if(window.confirm("Tolak?")) remove(ref(db, `users/${id}`)); };
-  const deleteTeacher = (id) => { if(window.confirm("Hapus?")) remove(ref(db, `users/${id}`)); };
+  const rejectTeacher = (id) => { if(window.confirm("Tolak dan hapus data guru ini?")) remove(ref(db, `users/${id}`)); };
+  const deleteTeacher = (id) => { if(window.confirm("Hapus akun guru ini dari instansi Anda?")) remove(ref(db, `users/${id}`)); };
   const handleResetPassword = (email) => { if (window.confirm(`Kirim instruksi reset ke ${email}?`)) sendPasswordResetEmail(auth, email).then(() => alert("Terkirim!")).catch(err => alert("Gagal: " + err.message)); };
 
   const availableGurus = [...new Set(schoolLeaderboard.map(s => s?.teacherEmail).filter(Boolean))];
@@ -253,7 +256,7 @@ export default function SchoolAdminDashboard() {
 
       {isMobileMenuOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />}
       
-      {/* SIDEBAR - CLEAN WHITE DESIGN */}
+      {/* SIDEBAR */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
         <div className="p-6 flex items-center gap-3">
            <ShieldCheck size={28} className="text-blue-600"/>
@@ -357,7 +360,7 @@ export default function SchoolAdminDashboard() {
                    <form onSubmit={handleUpdateSchool} className="space-y-6">
                       <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4"><h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Sistem (Read Only)</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">ID Tenant</label><input disabled value={schoolId} className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl text-sm font-bold text-slate-500 cursor-not-allowed uppercase" /></div><div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Nama Instansi</label><input disabled value={schoolInfo?.name || ''} className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl text-sm font-black text-slate-700 cursor-not-allowed" /></div></div></div>
                       <div className="space-y-4"><h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 border-b border-slate-100 pb-2">Data Operasional</h4><div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">Alamat Lengkap</label><textarea required value={schoolForm.alamat} onChange={e => setSchoolForm({...schoolForm, alamat: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm min-h-[80px]" /></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">Nama Kepala Sekolah</label><input required value={schoolForm.kepalaSekolah} onChange={e => setSchoolForm({...schoolForm, kepalaSekolah: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm" /></div><div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">NIP Kepala Sekolah</label><input value={schoolForm.nipKepalaSekolah} onChange={e => setSchoolForm({...schoolForm, nipKepalaSekolah: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm" /></div></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">Kontak / Telepon</label><input value={schoolForm.telepon} onChange={e => setSchoolForm({...schoolForm, telepon: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm" /></div><div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">URL Logo Sekolah</label><input value={schoolForm.logoUrl} onChange={e => setSchoolForm({...schoolForm, logoUrl: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm" /></div></div></div>
-                      <button type="submit" disabled={schoolId === 'UNREGISTERED'} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl text-sm font-black transition-all">SIMPAN PROFIL INSTANSI</button>
+                      <button type="submit" disabled={schoolId === 'UNREGISTERED'} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl text-sm font-black transition-all">SIMPAN PROFIL INSTANSI</button>
                    </form>
                 </div>
              </div>
@@ -371,8 +374,8 @@ export default function SchoolAdminDashboard() {
                   <p className="text-sm text-slate-500">Daftarkan Kelas dan Mata Pelajaran resmi.</p>
                </div>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white rounded-[24px] border border-slate-200 shadow-sm overflow-hidden flex flex-col"><div className="p-5 border-b border-slate-100 bg-slate-50"><h4 className="font-black text-slate-800 text-base">Daftar Kelas</h4></div><div className="p-5 flex-1 overflow-y-auto max-h-[400px]"><ul className="space-y-2">{schoolClasses.map(c => (<li key={c.id} className="flex justify-between items-center p-3 bg-white rounded-xl border border-slate-200"><span className="font-bold text-sm text-slate-700">Tingkat {c.name}</span><button onClick={() => handleDeleteClass(c.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></li>))}{schoolClasses.length === 0 && <li className="text-center p-4 text-slate-400 text-sm">Kosong.</li>}</ul></div><div className="p-4 border-t border-slate-100 bg-white"><form onSubmit={handleAddClass} className="flex gap-2"><input value={classForm} onChange={e=>setClassForm(e.target.value)} required placeholder="Cth: 10" className="flex-1 p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-700" /><button disabled={schoolId === 'UNREGISTERED'} type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-3 rounded-xl font-black transition-colors"><Plus size={18}/></button></form></div></div>
-                  <div className="bg-white rounded-[24px] border border-slate-200 shadow-sm overflow-hidden flex flex-col"><div className="p-5 border-b border-slate-100 bg-slate-50"><h4 className="font-black text-slate-800 text-base">Daftar Mapel</h4></div><div className="p-5 flex-1 overflow-y-auto max-h-[400px]"><ul className="space-y-2">{schoolSubjects.map(s => (<li key={s.id} className="flex justify-between items-center p-3 bg-white rounded-xl border border-slate-200"><span className="font-bold text-sm text-slate-700">{s.name}</span><button onClick={() => handleDeleteSubject(s.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></li>))}{schoolSubjects.length === 0 && <li className="text-center p-4 text-slate-400 text-sm">Kosong.</li>}</ul></div><div className="p-4 border-t border-slate-100 bg-white"><form onSubmit={handleAddSubject} className="flex gap-2"><input value={subjectForm} onChange={e=>setSubjectForm(e.target.value)} required placeholder="Cth: Matematika" className="flex-1 p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-700" /><button disabled={schoolId === 'UNREGISTERED'} type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-3 rounded-xl font-black transition-colors"><Plus size={18}/></button></form></div></div>
+                  <div className="bg-white rounded-[24px] border border-slate-200 shadow-sm overflow-hidden flex flex-col"><div className="p-5 border-b border-slate-100 bg-slate-50"><h4 className="font-black text-slate-800 text-base">Daftar Kelas</h4></div><div className="p-5 flex-1 overflow-y-auto max-h-[400px]"><ul className="space-y-2">{schoolClasses.map(c => (<li key={c.id} className="flex justify-between items-center p-3 bg-white rounded-xl border border-slate-200"><span className="font-bold text-sm text-slate-700">Tingkat {c?.name}</span><button onClick={() => handleDeleteClass(c.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></li>))}{schoolClasses.length === 0 && <li className="text-center p-4 text-slate-400 text-sm">Kosong.</li>}</ul></div><div className="p-4 border-t border-slate-100 bg-white"><form onSubmit={handleAddClass} className="flex gap-2"><input value={classForm} onChange={e=>setClassForm(e.target.value)} required placeholder="Cth: 10" className="flex-1 p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-700" /><button disabled={schoolId === 'UNREGISTERED'} type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-3 rounded-xl font-black transition-colors"><Plus size={18}/></button></form></div></div>
+                  <div className="bg-white rounded-[24px] border border-slate-200 shadow-sm overflow-hidden flex flex-col"><div className="p-5 border-b border-slate-100 bg-slate-50"><h4 className="font-black text-slate-800 text-base">Daftar Mapel</h4></div><div className="p-5 flex-1 overflow-y-auto max-h-[400px]"><ul className="space-y-2">{schoolSubjects.map(s => (<li key={s.id} className="flex justify-between items-center p-3 bg-white rounded-xl border border-slate-200"><span className="font-bold text-sm text-slate-700">{s?.name}</span><button onClick={() => handleDeleteSubject(s.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></li>))}{schoolSubjects.length === 0 && <li className="text-center p-4 text-slate-400 text-sm">Kosong.</li>}</ul></div><div className="p-4 border-t border-slate-100 bg-white"><form onSubmit={handleAddSubject} className="flex gap-2"><input value={subjectForm} onChange={e=>setSubjectForm(e.target.value)} required placeholder="Cth: Matematika" className="flex-1 p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-slate-700" /><button disabled={schoolId === 'UNREGISTERED'} type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-3 rounded-xl font-black transition-colors"><Plus size={18}/></button></form></div></div>
                </div>
             </div>
           )}
@@ -386,7 +389,7 @@ export default function SchoolAdminDashboard() {
                  <div className="flex flex-wrap gap-2 w-full md:w-auto"><button onClick={downloadStudentTemplate} className="flex-1 md:flex-none bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2"><Download size={16}/> Template</button><button onClick={() => {if(fileInputRef.current) fileInputRef.current.click()}} disabled={schoolId === 'UNREGISTERED'} className="flex-1 md:flex-none bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2"><Upload size={16}/> Import Excel</button><button onClick={() => setShowAddStudentModal(true)} disabled={schoolId === 'UNREGISTERED'} className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-2"><Plus size={16}/> Input Manual</button></div>
               </div>
               <div className="bg-white rounded-[20px] border border-slate-200 overflow-x-auto shadow-sm">
-                <table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-slate-50 text-slate-500 border-b border-slate-200"><tr><th className="py-4 px-6 w-16 text-center">No</th><th className="py-4 px-6 font-bold uppercase text-xs">Nama Lengkap</th><th className="py-4 px-6 font-bold uppercase text-xs">NISN</th><th className="py-4 px-6 text-center font-bold uppercase text-xs">Kelas / Ruang</th><th className="py-4 px-6 text-center font-bold uppercase text-xs w-24">Aksi</th></tr></thead><tbody className="divide-y divide-slate-100">{schoolStudents.map((s, i) => (<tr key={s.id} className="hover:bg-slate-50"><td className="py-3 px-6 text-center font-bold text-slate-500">{i + 1}</td><td className="py-3 px-6 font-black text-slate-800">{s.name}</td><td className="py-3 px-6 text-slate-500 font-medium">{s.nisn || '-'}</td><td className="py-3 px-6 text-center font-bold text-slate-600">{s.kelas}-{s.subKelas}</td><td className="py-3 px-6 text-center"><button onClick={() => handleDeleteStudent(s.id)} className="text-slate-400 hover:text-red-600 bg-slate-50 hover:bg-red-50 border border-slate-200 p-2 rounded-lg transition-colors"><Trash2 size={16}/></button></td></tr>))}{schoolStudents.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-400 font-medium">Belum ada data siswa.</td></tr>}</tbody></table>
+                <table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-slate-50 text-slate-500 border-b border-slate-200"><tr><th className="py-4 px-6 w-16 text-center">No</th><th className="py-4 px-6 font-bold uppercase text-xs">Nama Lengkap</th><th className="py-4 px-6 font-bold uppercase text-xs">NISN</th><th className="py-4 px-6 text-center font-bold uppercase text-xs">Kelas / Ruang</th><th className="py-4 px-6 text-center font-bold uppercase text-xs w-24">Aksi</th></tr></thead><tbody className="divide-y divide-slate-100">{schoolStudents.map((s, i) => (<tr key={s?.id || i} className="hover:bg-slate-50"><td className="py-3 px-6 text-center font-bold text-slate-500">{i + 1}</td><td className="py-3 px-6 font-black text-slate-800">{s?.name || 'Anonim'}</td><td className="py-3 px-6 text-slate-500 font-medium">{s?.nisn || '-'}</td><td className="py-3 px-6 text-center font-bold text-slate-600">{s?.kelas}-{s?.subKelas}</td><td className="py-3 px-6 text-center"><button onClick={() => handleDeleteStudent(s.id)} className="text-slate-400 hover:text-red-600 bg-slate-50 hover:bg-red-50 border border-slate-200 p-2 rounded-lg transition-colors"><Trash2 size={16}/></button></td></tr>))}{schoolStudents.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-400 font-medium">Belum ada data siswa.</td></tr>}</tbody></table>
               </div>
             </div>
           )}
@@ -395,11 +398,73 @@ export default function SchoolAdminDashboard() {
           {activeTab === 'guru' && (
             <div className="max-w-6xl mx-auto animate-in fade-in duration-300">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-[24px] shadow-sm border border-slate-200 mb-6">
-                 <div><h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><Users className="text-blue-600"/> Manajemen Guru</h3><p className="text-sm text-slate-500 mt-1">Kelola staf pengajar instansi Anda.</p></div>
+                 <div>
+                    <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><Users className="text-blue-600"/> Manajemen Guru</h3>
+                    <p className="text-sm text-slate-500 mt-1">Kelola staf pengajar instansi Anda.</p>
+                 </div>
                  <button onClick={() => { setGuruForm({name:'', email:'', password:''}); setShowAddGuruModal(true); }} disabled={schoolId === 'UNREGISTERED'} className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-black flex items-center gap-2"><Plus size={18}/> Tambah Guru Baru</button>
               </div>
+
+              {/* RESTORASI: KOTAK GURU PENDING YANG HILANG KARENA MINIFY */}
+              {pendingTeachers.length > 0 && (
+                <div className="bg-orange-50 rounded-2xl border border-orange-200 overflow-hidden shadow-sm p-5 space-y-4 mb-6">
+                  <div className="font-black text-orange-700 flex items-center gap-2"><Users size={20}/> Menunggu Persetujuan ({pendingTeachers.length})</div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {pendingTeachers.map(t => (
+                      <div key={t.id} className="bg-white p-4 rounded-xl border border-orange-200 flex flex-col justify-between gap-3 shadow-sm">
+                        <div>
+                          <p className="font-black text-slate-800 text-sm">{t?.name || 'Tanpa Nama'}</p>
+                          <p className="font-medium text-slate-500 text-xs mt-0.5">{t?.email || '-'}</p>
+                        </div>
+                        <div className="flex gap-2 w-full border-t border-slate-100 pt-3">
+                          <button onClick={() => approveTeacher(t.id)} className="flex-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 py-2 rounded-lg text-xs font-bold transition-all flex justify-center items-center gap-1"><CheckCircle size={16}/> Terima</button>
+                          <button onClick={() => rejectTeacher(t.id)} className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-2 rounded-lg text-xs font-bold transition-all flex justify-center items-center gap-1"><XCircle size={16}/> Tolak</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TABEL GURU AKTIF (Dimekarkan agar aman dari Error) */}
               <div className="bg-white rounded-[20px] border border-slate-200 overflow-x-auto shadow-sm">
-                <table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-slate-50 text-slate-500 border-b border-slate-200"><tr><th className="py-4 px-6 w-16 text-center">No</th><th className="py-4 px-6 font-bold uppercase text-xs">Nama Guru</th><th className="py-4 px-6 font-bold uppercase text-xs">Email Login</th><th className="py-4 px-6 text-center font-bold uppercase text-xs w-48">Aksi</th></tr></thead><tbody className="divide-y divide-slate-100">{activeTeachers.map((t, i) => (<tr key={t.id} className="hover:bg-slate-50"><td className="py-4 px-6 text-center font-bold text-slate-500">{i + 1}</td><td className="py-4 px-6 font-black text-slate-800">{t?.name}</td><td className="py-4 px-6 text-slate-500 font-medium">{t?.email}</td><td className="py-4 px-6"><div className="flex justify-center gap-2"><button onClick={() => { setEditGuruId(t.id); setGuruForm({name: t.name, email: t.email}); setShowEditGuruModal(true); }} className="text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 border border-slate-200 p-2 rounded-lg"><UserCog size={16}/></button><button onClick={() => handleResetPassword(t.email)} className="text-slate-400 hover:text-amber-500 bg-slate-50 hover:bg-amber-50 border border-slate-200 p-2 rounded-lg"><KeyRound size={16}/></button><button onClick={() => deleteTeacher(t.id)} className="text-slate-400 hover:text-red-600 bg-slate-50 hover:bg-red-50 border border-slate-200 p-2 rounded-lg"><Trash2 size={16}/></button></div></td></tr>))}{activeTeachers.length === 0 && <tr><td colSpan="4" className="p-8 text-center text-slate-400 font-medium">Belum ada guru.</td></tr>}</tbody></table>
+                <table className="w-full text-left text-sm whitespace-nowrap">
+                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                    <tr>
+                      <th className="py-4 px-6 w-16 text-center">No</th>
+                      <th className="py-4 px-6 font-bold uppercase text-xs">Nama Guru</th>
+                      <th className="py-4 px-6 font-bold uppercase text-xs">Email Login</th>
+                      <th className="py-4 px-6 text-center font-bold uppercase text-xs w-48">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {activeTeachers.map((t, i) => (
+                      <tr key={t?.id || i} className="hover:bg-slate-50">
+                        <td className="py-4 px-6 text-center font-bold text-slate-500">{i + 1}</td>
+                        <td className="py-4 px-6 font-black text-slate-800">{t?.name || 'Guru'}</td>
+                        <td className="py-4 px-6 text-slate-500 font-medium">{t?.email || '-'}</td>
+                        <td className="py-4 px-6">
+                          <div className="flex justify-center gap-2">
+                            <button onClick={() => { setEditGuruId(t.id); setGuruForm({name: t?.name, email: t?.email}); setShowEditGuruModal(true); }} className="text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 border border-slate-200 p-2 rounded-lg" title="Edit Nama">
+                              <UserCog size={16}/>
+                            </button>
+                            <button onClick={() => handleResetPassword(t?.email)} className="text-slate-400 hover:text-amber-500 bg-slate-50 hover:bg-amber-50 border border-slate-200 p-2 rounded-lg" title="Reset Password">
+                              <KeyRound size={16}/>
+                            </button>
+                            <button onClick={() => deleteTeacher(t.id)} className="text-slate-400 hover:text-red-600 bg-slate-50 hover:bg-red-50 border border-slate-200 p-2 rounded-lg" title="Hapus Guru">
+                              <Trash2 size={16}/>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {activeTeachers.length === 0 && (
+                      <tr>
+                        <td colSpan="4" className="p-8 text-center text-slate-400 font-medium">Belum ada guru yang aktif.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -410,11 +475,11 @@ export default function SchoolAdminDashboard() {
                <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-200 mb-6"><h3 className="text-xl font-black text-slate-800 flex items-center gap-2 mb-1"><Radio className="text-blue-600"/> Monitor Ujian Global</h3><p className="text-sm text-slate-500">Pantau semua jadwal dan sesi ujian.</p></div>
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {schoolSessions.map(session => (
-                     <div key={session.id} className="bg-white border border-slate-200 rounded-[20px] p-5 shadow-sm flex flex-col justify-between">
+                     <div key={session?.id} className="bg-white border border-slate-200 rounded-[20px] p-5 shadow-sm flex flex-col justify-between">
                         <div>
-                           <div className="flex justify-between items-start mb-3"><h4 className="text-xl font-black font-mono tracking-widest text-slate-800">{session.token}</h4><span className={`text-[9px] font-black px-2 py-1 rounded border uppercase ${session.status === 'open' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'}`}>{session.status}</span></div>
-                           <p className="font-bold text-blue-600 text-sm">{session.mapel} <span className="text-slate-400 text-xs font-medium ml-1">(Kls: {session.kelas}-{session.subKelas})</span></p><p className="text-xs text-slate-500 mt-1">Guru: {session.teacherEmail}</p>
-                           <div className="mt-4 pt-3 border-t border-slate-100 text-[10px] font-bold text-slate-400 flex justify-between"><span>Waktu: {session.jamMulai || '--'} - {session.jamSelesai || '--'}</span></div>
+                           <div className="flex justify-between items-start mb-3"><h4 className="text-xl font-black font-mono tracking-widest text-slate-800">{session?.token}</h4><span className={`text-[9px] font-black px-2 py-1 rounded border uppercase ${session?.status === 'open' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'}`}>{session?.status}</span></div>
+                           <p className="font-bold text-blue-600 text-sm">{session?.mapel} <span className="text-slate-400 text-xs font-medium ml-1">(Kls: {session?.kelas}-{session?.subKelas})</span></p><p className="text-xs text-slate-500 mt-1">Guru: {session?.teacherEmail}</p>
+                           <div className="mt-4 pt-3 border-t border-slate-100 text-[10px] font-bold text-slate-400 flex justify-between"><span>Waktu: {session?.jamMulai || '--'} - {session?.jamSelesai || '--'}</span></div>
                         </div>
                      </div>
                   ))}
@@ -423,15 +488,16 @@ export default function SchoolAdminDashboard() {
             </div>
           )}
 
-          {/* TAB REKAP NILAI SEKOLAH (LAYOUT SUPER KOMPAK & HORIZONTAL) */}
+          {/* TAB REKAP NILAI SEKOLAH (LAYOUT HORIZONTAL KOMPAK) */}
           {activeTab === 'recap' && (
             <div className="max-w-7xl mx-auto print:max-w-full animate-in fade-in duration-300">
               
+              {/* TOOLBAR HORIZONTAL BARU */}
               <div className="bg-white rounded-[24px] border border-slate-200 shadow-sm p-6 print:hidden mb-6">
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
                    <div>
                       <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-blue-600"/> Laporan Nilai Sekolah</h3>
-                      <p className="text-xs font-bold text-slate-500 mt-1">Filter nilai berdasarkan Guru, Mapel, atau Kelas untuk mencetak dokumen.</p>
+                      <p className="text-xs font-bold text-slate-500 mt-1">Filter dan cetak dokumen administrasi ujian.</p>
                    </div>
                    <button onClick={downloadRecap} disabled={schoolId === 'UNREGISTERED'} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 border border-emerald-200 transition-colors disabled:opacity-50"><Download size={14}/> Export Excel</button>
                 </div>
@@ -458,7 +524,7 @@ export default function SchoolAdminDashboard() {
                 <p className="mb-4 text-sm font-bold">Instansi: {schoolId.toUpperCase()} <br/> Guru Mapel: {recapGuru || 'Semua'} | Mapel: {recapMapel || 'Semua'} | Kelas: {recapKelas || 'Semua'}</p>
                 <table className="w-full text-left text-sm">
                   <thead><tr><th className="py-2 px-3 text-center">No</th><th className="py-2 px-3">Nama Siswa</th><th className="py-2 px-3 text-center">Kelas</th><th className="py-2 px-3">Mapel</th><th className="py-2 px-3 text-center">Nilai Akhir</th></tr></thead>
-                  <tbody>{filteredLeaderboard.map((s, i) => (<tr key={s.id}><td className="py-2 px-3 text-center">{i+1}</td><td className="py-2 px-3 font-bold uppercase">{s.name}</td><td className="py-2 px-3 text-center">{s.class}-{s.subKelas}</td><td className="py-2 px-3">{s.mapel}</td><td className="py-2 px-3 text-center font-black">{s.score}</td></tr>))}</tbody>
+                  <tbody>{filteredLeaderboard.map((s, i) => (<tr key={s?.id || i}><td className="py-2 px-3 text-center">{i+1}</td><td className="py-2 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td><td className="py-2 px-3 text-center">{s?.class}-{s?.subKelas}</td><td className="py-2 px-3">{s?.mapel}</td><td className="py-2 px-3 text-center font-black">{s?.score || 0}</td></tr>))}</tbody>
                 </table>
                 <div className="flex justify-end mt-12 text-center"><div className="w-64"><p>Kepala Sekolah,</p><br/><br/><br/><p className="font-bold uppercase border-b border-black pb-1">{schoolInfo?.kepalaSekolah || '_________________________'}</p><p className="text-xs">NIP. {schoolInfo?.nipKepalaSekolah || '_________________'}</p></div></div>
               </div>
@@ -476,27 +542,37 @@ export default function SchoolAdminDashboard() {
                 <p className="mb-4 text-sm font-bold">Mapel: {recapMapel || '___________'} | Kelas: {recapKelas || '____'}</p>
                 <table className="w-full text-left text-sm">
                   <thead><tr><th className="py-3 px-3 text-center w-12">No</th><th className="py-3 px-3">Nama Lengkap</th><th className="py-3 px-3 text-center w-24">Kelas</th><th className="py-3 px-3 w-48 text-center">TTD</th></tr></thead>
-                  <tbody>{filteredLeaderboard.map((s, i) => (<tr key={s.id}><td className="py-3 px-3 text-center">{i+1}</td><td className="py-3 px-3 font-bold uppercase">{s.name}</td><td className="py-3 px-3 text-center">{s.class}-{s.subKelas}</td><td className="py-3 px-3 text-slate-400 text-xs">{i+1}.</td></tr>))}{[...Array(Math.max(0, 15 - filteredLeaderboard.length))].map((_, i) => (<tr key={`e-${i}`}><td className="py-4"></td><td></td><td></td><td></td></tr>))}</tbody>
+                  <tbody>{filteredLeaderboard.map((s, i) => (<tr key={s?.id || i}><td className="py-3 px-3 text-center">{i+1}</td><td className="py-3 px-3 font-bold uppercase">{s?.name || 'Anonim'}</td><td className="py-3 px-3 text-center">{s?.class}-{s?.subKelas}</td><td className="py-3 px-3 text-slate-400 text-xs">{i+1}.</td></tr>))}{[...Array(Math.max(0, 15 - filteredLeaderboard.length))].map((_, i) => (<tr key={`e-${i}`}><td className="py-4"></td><td></td><td></td><td></td></tr>))}</tbody>
                 </table>
               </div>
 
-              {/* UI TABEL REKAP BROWSER */}
+              {/* UI TABEL REKAP BROWSER (DILEBARKAN AGAR AMAN DARI ERROR) */}
               <div className="bg-white rounded-[20px] border border-slate-200 overflow-x-auto shadow-sm print:hidden">
                 <table className="w-full text-left text-sm whitespace-nowrap">
                   <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                    <tr><th className="py-4 px-4 text-center">No</th><th className="py-4 px-4 font-bold uppercase tracking-wider text-xs">Siswa</th><th className="py-4 px-4 text-center font-bold uppercase tracking-wider text-xs">Kelas</th><th className="py-4 px-4 font-bold uppercase tracking-wider text-xs">Mapel & Guru</th><th className="py-4 px-4 text-center font-bold uppercase tracking-wider text-xs">Skor</th></tr>
+                    <tr>
+                      <th className="py-4 px-4 text-center">No</th>
+                      <th className="py-4 px-4 font-bold uppercase tracking-wider text-xs">Siswa</th>
+                      <th className="py-4 px-4 text-center font-bold uppercase tracking-wider text-xs">Kelas</th>
+                      <th className="py-4 px-4 font-bold uppercase tracking-wider text-xs">Mapel & Guru</th>
+                      <th className="py-4 px-4 text-center font-bold uppercase tracking-wider text-xs">Skor</th>
+                    </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredLeaderboard.map((s, i) => (
-                      <tr key={s.id} className="hover:bg-slate-50">
+                      <tr key={s?.id || i} className="hover:bg-slate-50">
                         <td className="py-3 px-4 text-center font-bold text-slate-500">{i+1}</td>
-                        <td className="py-3 px-4"><p className="font-black text-slate-800">{s.name}</p></td>
-                        <td className="py-3 px-4 text-center font-bold text-slate-600">{s.class}-{s.subKelas}</td>
-                        <td className="py-3 px-4"><p className="font-bold text-blue-600">{s.mapel}</p><p className="text-[10px] text-slate-500">{s.teacherEmail}</p></td>
-                        <td className="py-3 px-4 text-center"><span className="text-base font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100">{s.score}</span></td>
+                        <td className="py-3 px-4"><p className="font-black text-slate-800">{s?.name || 'Tanpa Nama'}</p></td>
+                        <td className="py-3 px-4 text-center font-bold text-slate-600">{s?.class || '-'}-{s?.subKelas || ''}</td>
+                        <td className="py-3 px-4"><p className="font-bold text-blue-600">{s?.mapel || '-'}</p><p className="text-[10px] text-slate-500">{s?.teacherEmail || '-'}</p></td>
+                        <td className="py-3 px-4 text-center"><span className="text-base font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100">{s?.score || 0}</span></td>
                       </tr>
                     ))}
-                    {filteredLeaderboard.length === 0 && <tr><td colSpan="5" className="p-10 text-center text-slate-400 font-medium">Belum ada rekap nilai untuk filter ini.<br/><span className="text-xs text-slate-400">Pastikan Guru sudah menyelesaikan sesi ujiannya.</span></td></tr>}
+                    {filteredLeaderboard.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="p-10 text-center text-slate-400 font-medium">Belum ada rekap nilai untuk filter ini.<br/><span className="text-xs text-slate-400">Pastikan Guru sudah menyelesaikan sesi ujiannya.</span></td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -509,17 +585,49 @@ export default function SchoolAdminDashboard() {
       {/* MODALS HIDDEN FROM PRINT */}
       {showAddGuruModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[120] print:hidden">
-          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200"><h2 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><Plus className="text-blue-600"/> Daftarkan Guru Baru</h2><form onSubmit={handleAddGuru} className="space-y-4"><div><label className="text-xs font-bold text-slate-500 mb-1 block">Nama Lengkap & Gelar</label><input required value={guruForm.name} onChange={e => setGuruForm({...guruForm, name: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="Bpk. Budi S.Pd" /></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">Email Akun (Login)</label><input type="email" required value={guruForm.email} onChange={e => setGuruForm({...guruForm, email: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="budi@guru.com" /></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">Password Sementara</label><input type="password" required value={guruForm.password} onChange={e => setGuruForm({...guruForm, password: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="Minimal 6 Karakter" /></div><div className="flex gap-2 pt-2"><button type="button" onClick={() => setShowAddGuruModal(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Batal</button><button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black transition-colors">Buat Akun Guru</button></div></form></div>
+          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <h2 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><Plus className="text-blue-600"/> Daftarkan Guru Baru</h2>
+            <form onSubmit={handleAddGuru} className="space-y-4">
+               <div><label className="text-xs font-bold text-slate-500 mb-1 block">Nama Lengkap & Gelar</label><input required value={guruForm.name} onChange={e => setGuruForm({...guruForm, name: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="Bpk. Budi S.Pd" /></div>
+               <div><label className="text-xs font-bold text-slate-500 mb-1 block">Email Akun (Login)</label><input type="email" required value={guruForm.email} onChange={e => setGuruForm({...guruForm, email: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="budi@guru.com" /></div>
+               <div><label className="text-xs font-bold text-slate-500 mb-1 block">Password Sementara</label><input type="password" required value={guruForm.password} onChange={e => setGuruForm({...guruForm, password: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="Minimal 6 Karakter" /></div>
+               <div className="flex gap-2 pt-2"><button type="button" onClick={() => setShowAddGuruModal(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Batal</button><button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black transition-colors">Buat Akun Guru</button></div>
+            </form>
+          </div>
         </div>
       )}
       {showEditGuruModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[120] print:hidden">
-          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200"><h2 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><UserCog className="text-blue-600"/> Edit Nama Guru</h2><form onSubmit={handleUpdateGuru} className="space-y-4"><div><label className="text-xs font-bold text-slate-500 mb-1 block">Nama Lengkap & Gelar</label><input required value={guruForm.name} onChange={e => setGuruForm({...guruForm, name: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" /></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">Email Akun (Info Saja)</label><input disabled value={guruForm.email} className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-500" /></div><div className="flex gap-2 pt-2"><button type="button" onClick={() => setShowEditGuruModal(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Batal</button><button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black transition-colors">Simpan Revisi</button></div></form></div>
+          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <h2 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><UserCog className="text-blue-600"/> Edit Nama Guru</h2>
+            <form onSubmit={handleUpdateGuru} className="space-y-4">
+               <div><label className="text-xs font-bold text-slate-500 mb-1 block">Nama Lengkap & Gelar</label><input required value={guruForm.name} onChange={e => setGuruForm({...guruForm, name: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" /></div>
+               <div><label className="text-xs font-bold text-slate-500 mb-1 block">Email Akun (Info Saja)</label><input disabled value={guruForm.email} className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-500" /></div>
+               <div className="flex gap-2 pt-2"><button type="button" onClick={() => setShowEditGuruModal(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Batal</button><button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black transition-colors">Simpan Revisi</button></div>
+            </form>
+          </div>
         </div>
       )}
       {showAddStudentModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[120] print:hidden">
-          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200"><h2 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><GraduationCap className="text-blue-600"/> Input Data Siswa</h2><form onSubmit={handleAddStudent} className="space-y-4"><div><label className="text-xs font-bold text-slate-500 mb-1 block">Nama Lengkap</label><input required value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 uppercase" placeholder="Budi Santoso" /></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">NISN (Opsional)</label><input value={studentForm.nisn} onChange={e => setStudentForm({...studentForm, nisn: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="0012345678" /></div><div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold text-slate-500 mb-1 block">Kelas</label><select required value={studentForm.kelas} onChange={e => setStudentForm({...studentForm, kelas: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500"><option value="">Pilih</option>{schoolClasses.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">Sub/Ruang</label><input required value={studentForm.subKelas} onChange={e => setStudentForm({...studentForm, subKelas: e.target.value.toUpperCase()})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 uppercase" placeholder="A" /></div></div><div className="flex gap-2 pt-2"><button type="button" onClick={() => setShowAddStudentModal(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Batal</button><button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black transition-colors">Simpan Data</button></div></form></div>
+          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <h2 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><GraduationCap className="text-blue-600"/> Input Data Siswa</h2>
+            <form onSubmit={handleAddStudent} className="space-y-4">
+               <div><label className="text-xs font-bold text-slate-500 mb-1 block">Nama Lengkap</label><input required value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 uppercase" placeholder="Budi Santoso" /></div>
+               <div><label className="text-xs font-bold text-slate-500 mb-1 block">NISN (Opsional)</label><input value={studentForm.nisn} onChange={e => setStudentForm({...studentForm, nisn: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500" placeholder="0012345678" /></div>
+               <div className="grid grid-cols-2 gap-3">
+                  <div>
+                     <label className="text-xs font-bold text-slate-500 mb-1 block">Kelas</label>
+                     <select required value={studentForm.kelas} onChange={e => setStudentForm({...studentForm, kelas: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
+                        <option value="">Pilih</option>
+                        {schoolClasses.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                     </select>
+                  </div>
+                  <div><label className="text-xs font-bold text-slate-500 mb-1 block">Sub/Ruang</label><input required value={studentForm.subKelas} onChange={e => setStudentForm({...studentForm, subKelas: e.target.value.toUpperCase()})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-blue-500 uppercase" placeholder="A" /></div>
+               </div>
+               <div className="flex gap-2 pt-2"><button type="button" onClick={() => setShowAddStudentModal(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Batal</button><button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black transition-colors">Simpan Data</button></div>
+            </form>
+          </div>
         </div>
       )}
     </div>
