@@ -1,7 +1,7 @@
 // src/pages/teacher/TeacherDashboard.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../../config/firebase';
-import { getAuth, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signOut, onAuthStateChanged, updatePassword } from 'firebase/auth'; // Tambahkan updatePassword
 import { ref as dbRef, onValue, push, remove, update, set } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
@@ -12,7 +12,8 @@ import {
   Download, Upload, Monitor, Dices, Menu, X, Lock, Unlock, 
   Eye, Filter, GraduationCap, Edit, Activity, User, MessageSquare, 
   Send, FileText, ClipboardList, ShieldAlert, QrCode, Zap, 
-  ShieldCheck, CheckSquare, Check, Percent, Clock, AlertTriangle, Loader2 
+  ShieldCheck, CheckSquare, Check, Percent, Clock, AlertTriangle, Loader2,
+  LayoutDashboard, Radio, KeyRound // Tambahkan Icon Baru
 } from 'lucide-react';
 
 export default function TeacherDashboard() {
@@ -23,8 +24,9 @@ export default function TeacherDashboard() {
   const [teacherProfile, setTeacherProfile] = useState(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [tempProfileName, setTempProfileName] = useState('');
+  const [newPassword, setNewPassword] = useState(''); // State untuk ganti password
 
-  const [activeTab, setActiveTab] = useState(localStorage.getItem('teacherTab') || 'settings');
+  const [activeTab, setActiveTab] = useState(localStorage.getItem('teacherTab') || 'dashboard'); // Default ke dashboard
   useEffect(() => { localStorage.setItem('teacherTab', activeTab); }, [activeTab]);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -180,6 +182,27 @@ export default function TeacherDashboard() {
     if(auth.currentUser) {
       update(dbRef(db, `users/${auth.currentUser.uid}`), { name: tempProfileName });
       alert("Profil Anda berhasil diperbarui!");
+    }
+  };
+
+  // --- UPDATE PASSWORD MANDIRI ---
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      return alert("Password baru minimal 6 karakter!");
+    }
+    if (window.confirm("Yakin ingin mengubah kata sandi Anda?")) {
+      try {
+        await updatePassword(auth.currentUser, newPassword);
+        alert("Kata sandi berhasil diperbarui!");
+        setNewPassword('');
+      } catch (error) {
+        if (error.code === 'auth/requires-recent-login') {
+          alert("Sistem mendeteksi Anda sudah lama login. Silakan Logout dan Login kembali terlebih dahulu untuk mengubah kata sandi demi keamanan.");
+        } else {
+          alert("Gagal mengubah kata sandi: " + error.message);
+        }
+      }
     }
   };
 
@@ -487,7 +510,7 @@ export default function TeacherDashboard() {
   }
 
   return (
-    <div className="flex h-screen bg-[#f8fafc] overflow-hidden font-sans">
+    <div className="flex h-screen bg-[#f8fafc] overflow-hidden font-sans animate-in fade-in duration-500">
       <style>{`
         @media print { 
           @page { margin: 1cm; size: portrait; } 
@@ -520,6 +543,7 @@ export default function TeacherDashboard() {
           </div>
         </div>
         <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
+          <NavItem tab="dashboard" icon={LayoutDashboard} label="Dashboard" />
           <NavItem tab="settings" icon={Settings} label="Sesi Ujian" />
           <NavItem tab="proctor" icon={Monitor} label="Monitor Live" />
           <NavItem tab="bank" icon={BookOpen} label="Bank Soal (V2)" />
@@ -552,11 +576,45 @@ export default function TeacherDashboard() {
         </header>
         
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
+
+          {/* TAB DASHBOARD UTAMA */}
+          {activeTab === 'dashboard' && (
+            <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+               <div className="bg-emerald-600 rounded-[24px] p-8 md:p-10 text-white shadow-lg relative overflow-hidden mb-6">
+                  <div className="absolute right-0 top-0 opacity-10 transform translate-x-10 -translate-y-5">
+                     <GraduationCap size={300} />
+                  </div>
+                  <div className="relative z-10">
+                      <h2 className="text-3xl md:text-4xl font-black mb-3 tracking-tight">Selamat Datang, {teacherProfile?.name || 'Guru'}!</h2>
+                      <p className="text-emerald-100 font-medium text-base md:text-lg max-w-2xl leading-relaxed">Kelola soal, pantau ujian, dan rekap nilai siswa Anda dengan cepat dan mudah di Dashboard Guru.</p>
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+                  <div className="bg-white p-6 rounded-[20px] border border-slate-200 shadow-sm flex flex-col justify-between h-32">
+                     <div className="flex items-center gap-2"><div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><BookOpen size={16}/></div></div>
+                     <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Total Soal</p><p className="text-3xl font-black text-slate-800">{myQuestions.length}</p></div>
+                  </div>
+                  <div className="bg-white p-6 rounded-[20px] border border-slate-200 shadow-sm flex flex-col justify-between h-32">
+                     <div className="flex items-center gap-2"><div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><Radio size={16}/></div></div>
+                     <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Sesi Aktif</p><p className="text-3xl font-black text-slate-800">{mySessions.filter(s => s.status === 'open').length}</p></div>
+                  </div>
+                  <div className="bg-white p-6 rounded-[20px] border border-slate-200 shadow-sm flex flex-col justify-between h-32">
+                     <div className="flex items-center gap-2"><div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center"><Users size={16}/></div></div>
+                     <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Siswa Ujian</p><p className="text-3xl font-black text-slate-800">{myLeaderboard.length}</p></div>
+                  </div>
+                  <div className="bg-white p-6 rounded-[20px] border border-slate-200 shadow-sm flex flex-col justify-between h-32">
+                     <div className="flex items-center gap-2"><div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center"><ClipboardList size={16}/></div></div>
+                     <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Total Sesi</p><p className="text-3xl font-black text-slate-800">{mySessions.length}</p></div>
+                  </div>
+               </div>
+            </div>
+          )}
           
           {/* TAB SESI UJIAN */}
           {activeTab === 'settings' && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 max-w-7xl mx-auto">
-              <div className="bg-white p-5 md:p-6 rounded-2xl shadow-sm border border-slate-200 h-fit">
+              <div className="bg-white p-5 md:p-6 rounded-[24px] shadow-sm border border-slate-200 h-fit">
                 <h3 className="text-lg font-black mb-5 text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-3"><Plus className="text-emerald-500" size={20}/> Buka Sesi Baru</h3>
                 <form onSubmit={handleCreateSession} className="space-y-4">
                   <div>
@@ -718,7 +776,7 @@ export default function TeacherDashboard() {
             <div className="space-y-5 max-w-7xl mx-auto print:max-w-full">
               <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
               
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 print:hidden space-y-4">
+              <div className="bg-white p-5 rounded-[24px] shadow-sm border border-slate-200 print:hidden space-y-4">
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-slate-100 pb-3">
                   <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><BookOpen className="text-emerald-500" size={20}/> Bank Soal V2</h3>
                   <div className="flex gap-2">
@@ -794,7 +852,7 @@ export default function TeacherDashboard() {
           {/* TAB REKAP NILAI & CETAK ADMINISTRASI */}
           {activeTab === 'recap' && (
             <div className="space-y-5 max-w-7xl mx-auto print:max-w-full">
-              <div className="bg-white p-5 md:p-6 rounded-2xl shadow-sm border border-slate-200 print:hidden space-y-4">
+              <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-200 print:hidden space-y-4">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-100 pb-3">
                   <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><ClipboardList className="text-emerald-500" size={20}/> Pusat Administrasi Ujian</h3>
                   <button onClick={handleDeleteMyRecap} className="w-full md:w-auto bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-4 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-colors shadow-sm"><Trash2 size={16}/> Bersihkan Nilai Saya</button>
@@ -961,8 +1019,10 @@ export default function TeacherDashboard() {
 
           {/* TAB PROFIL */}
           {activeTab === 'profile' && (
-            <div className="max-w-2xl mx-auto print:hidden">
-              <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
+            <div className="max-w-4xl mx-auto print:hidden space-y-6 animate-in fade-in duration-300">
+              
+              {/* Form Profil Nama */}
+              <div className="bg-white p-6 md:p-8 rounded-[24px] shadow-sm border border-slate-200">
                 <div className="flex items-center gap-4 border-b border-slate-100 pb-5 mb-5">
                   <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-700 font-black text-3xl uppercase shadow-inner shrink-0">{teacherProfile?.name?.charAt(0) || 'G'}</div>
                   <div>
@@ -972,7 +1032,7 @@ export default function TeacherDashboard() {
                 </div>
                 
                 <form onSubmit={handleUpdateProfile}>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     <div className="md:col-span-2">
                       <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Nama Lengkap beserta Gelar Akademik</label>
                       <input required value={tempProfileName} onChange={(e) => setTempProfileName(e.target.value)} placeholder="Contoh: Susi Susanti, S.Pd., M.Si." className="w-full p-3 border border-slate-200 bg-slate-50 rounded-xl outline-none focus:border-emerald-500 focus:bg-white text-sm font-bold text-slate-800 transition-colors shadow-inner" />
@@ -997,6 +1057,27 @@ export default function TeacherDashboard() {
                   <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3.5 mt-2 rounded-xl text-sm font-black shadow-md shadow-emerald-600/30 active:scale-95 transition-all tracking-widest flex justify-center items-center gap-2"><User size={18}/> SIMPAN PERUBAHAN NAMA</button>
                 </form>
               </div>
+
+              {/* Form Ubah Password (Ganti Kata Sandi Mandiri) */}
+              <div className="bg-white p-6 md:p-8 rounded-[24px] shadow-sm border border-slate-200">
+                 <div className="flex items-center gap-3 border-b border-slate-100 pb-4 mb-5">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shrink-0"><KeyRound size={20}/></div>
+                    <div>
+                       <h3 className="text-lg font-black text-slate-800 tracking-tight">Ubah Kata Sandi</h3>
+                       <p className="text-xs font-bold text-slate-500">Perbarui kata sandi Anda secara berkala demi keamanan akun.</p>
+                    </div>
+                 </div>
+                 <form onSubmit={handleUpdatePassword}>
+                    <div className="mb-5">
+                       <label className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 block tracking-widest">Kata Sandi Baru</label>
+                       <input type="password" required minLength="6" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Masukkan minimal 6 karakter" className="w-full p-3 border border-slate-200 bg-slate-50 rounded-xl outline-none focus:border-amber-500 focus:bg-white text-sm font-bold text-slate-800 transition-colors shadow-inner" />
+                    </div>
+                    <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 py-3.5 rounded-xl text-sm font-black shadow-md shadow-amber-500/30 active:scale-95 transition-all tracking-widest flex justify-center items-center gap-2">
+                       <KeyRound size={18}/> UPDATE KATA SANDI
+                    </button>
+                 </form>
+              </div>
+
             </div>
           )}
 
